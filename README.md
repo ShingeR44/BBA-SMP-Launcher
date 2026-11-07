@@ -178,6 +178,7 @@ RequireInvite = true   # регистрация только по приглаш
 | `minecraft` | Версия игры, например `26.3` |
 | `loader.type` / `loader.version` | `vanilla`, `fabric`, `quilt`, `neoforge`, `forge`. Для Fabric/Quilt версию можно не указывать |
 | `server` | `{ host, port }` для автоподключения |
+| `servers` | Несколько адресов на выбор: `[{ "host", "port", "name", "description" }]`. Игрок выбирает адрес на главной, лаунчер подключается к выбранному. Список можно менять без выпуска лаунчера |
 | `memory.recommended` | Рекомендуемая память, МБ |
 | `jvmArgs` | Дополнительные аргументы JVM |
 | `managedDirs` | Папки, которые лаунчер приводит к виду сборки (по умолчанию `["mods", "shaderpacks", "resourcepacks"]`) |

@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   jvmArgs: '',
   selectedAccount: null,
   lastNewsSeen: null,
+  serverAddress: null, // выбранный адрес сервера (host:port)
 };
 
 class Store {

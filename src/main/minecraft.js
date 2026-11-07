@@ -410,7 +410,8 @@ function buildLaunchArgs(root, version, o) {
   }
   cp.push(versionJarPath(root, version.id));
 
-  const server = o.server && o.server.host ? `${o.server.host}:${o.server.port || 25565}` : null;
+  // при стандартном порте передаём адрес без порта: так игра сама найдёт SRV-запись (например, у туннеля playit)
+  const server = o.server && o.server.host ? (o.server.port && o.server.port !== 25565 ? `${o.server.host}:${o.server.port}` : o.server.host) : null;
   const vars = {
     auth_player_name: o.account.name,
     version_name: version.id,

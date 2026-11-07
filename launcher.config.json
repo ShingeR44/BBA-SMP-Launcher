@@ -20,5 +20,25 @@
   "update": {
     "github": "ShingeR44/BBA-SMP-Launcher",
     "allowPrerelease": false
-  }
+  },
+  "servers": [
+    {
+      "host": "bba.dimon20k.ru",
+      "port": 25565,
+      "name": "Основной",
+      "description": "Подходит почти всем"
+    },
+    {
+      "host": "bba.dimon20k.ru",
+      "port": 443,
+      "name": "Через порт 443",
+      "description": "Если в сети открыты только сайты: школа, работа, общий Wi-Fi"
+    },
+    {
+      "host": "fried-obstacles.tun.ply.gg",
+      "port": 25565,
+      "name": "Для VPN и заграницы",
+      "description": "Если играешь с включённым VPN или из-за границы"
+    }
+  ]
 }

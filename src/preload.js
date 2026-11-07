@@ -46,7 +46,12 @@ contextBridge.exposeInMainWorld('bba', {
     check: () => call('update:check'),
     install: () => call('update:install'),
   },
-  server: { status: () => call('server:status') },
+  server: {
+    status: () => call('server:status'),
+    list: () => call('server:list'),
+    select: (id) => call('server:select', id),
+    pingAll: () => call('server:pingAll'),
+  },
   game: {
     play: (opts) => call('game:play', opts),
     cancel: () => call('game:cancel'),

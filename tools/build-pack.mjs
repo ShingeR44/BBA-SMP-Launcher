@@ -132,6 +132,7 @@ const pack = {
   minecraft: mc,
   loader,
   ...(server ? { server } : {}),
+  ...(Array.isArray(prev.servers) && prev.servers.length ? { servers: prev.servers } : {}),
   memory: { recommended: Number(opt('memory', (prev.memory && prev.memory.recommended) || 4096)) },
   jvmArgs: prev.jvmArgs || [],
   managedDirs: managed,

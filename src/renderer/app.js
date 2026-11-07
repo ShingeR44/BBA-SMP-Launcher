@@ -26,6 +26,8 @@ const state = {
   contentKind: 'pack',
   content: {},
   update: null,
+  servers: [],
+  pings: {},
 };
 
 const LOADER_NAMES = { vanilla: 'Ванилла', fabric: 'Fabric', quilt: 'Quilt', neoforge: 'NeoForge', forge: 'Forge' };
@@ -134,7 +136,7 @@ function renderHome() {
     stat('Онлайн', s && s.online ? `${s.players.online} / ${s.players.max}` : 'нет связи', s && s.online ? 'ok' : '')
   );
   const srv = p && p.server;
-  $('#serverAddress').textContent = srv && srv.host ? (srv.port && srv.port !== 25565 ? `${srv.host}:${srv.port}` : srv.host) : '—';
+  renderServers();
   $('#serverMotd').textContent = s && s.online ? [s.motd, s.version && `Версия сервера: ${s.version}`, `Пинг ${s.latency} мс`].filter(Boolean).join(' · ') : '';
   if (state.info) $('#heroTitle').textContent = state.info.serverName || 'BBA SMP';
 }
@@ -549,6 +551,69 @@ function idleProgress() {
   else setProgress('Готово к запуску', 1, `сборка ${p.version}`);
 }
 
+// ---------- Адреса сервера ----------
+const addrText = (x) => (x.port && x.port !== 25565 ? `${x.host}:${x.port}` : x.host);
+
+function renderServers() {
+  const box = $('#serverList');
+  if (!state.servers.length) return box.replaceChildren(el('div', { class: 'empty' }, '—'));
+  box.replaceChildren(
+    ...state.servers.map((x) => {
+      const p = state.pings[x.id];
+      const ping = !p ? el('span', { class: 'ping' }, '…') : p.online ? el('span', { class: 'ping ok' }, `${p.latency} мс`) : el('span', { class: 'ping off' }, 'нет связи');
+      const copy = el('button', { class: 'btn ghost small', title: 'Скопировать адрес' }, 'Скопировать');
+      copy.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(addrText(x)).then(() => toast(`Скопировано: ${addrText(x)}`, { ok: true, timeout: 2500 }), () => {});
+      });
+      const row = el(
+        'div',
+        { class: `server-row${x.selected ? ' selected' : ''}`, role: 'radio', 'aria-checked': String(!!x.selected), tabindex: '0', title: 'Подключаться к этому адресу' },
+        el('span', { class: 'radio' }),
+        el('div', { class: 'meta' }, el('code', {}, addrText(x)), el('span', {}, [x.name, x.description].filter(Boolean).join(' — '))),
+        ping,
+        copy
+      );
+      const choose = () => selectServer(x.id);
+      row.addEventListener('click', choose);
+      row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), choose()));
+      return row;
+    })
+  );
+}
+
+async function refreshServers() {
+  try {
+    state.servers = await bba.server.list();
+  } catch {
+    /* оставляем прошлый список */
+  }
+  renderServers();
+}
+
+async function pingServers() {
+  try {
+    for (const r of await bba.server.pingAll()) state.pings[r.id] = r;
+  } catch {
+    /* нет сети */
+  }
+  renderServers();
+}
+
+async function selectServer(id) {
+  const cur = state.servers.find((x) => x.selected);
+  if (cur && cur.id === id) return;
+  try {
+    state.servers = await bba.server.select(id);
+    const x = state.servers.find((s) => s.id === id);
+    toast(`Лаунчер будет подключаться к ${addrText(x)}`, { ok: true, timeout: 3000 });
+  } catch (e) {
+    showError(e);
+  }
+  renderServers();
+  refreshStatus();
+}
+
 // ---------- Новости ----------
 const fmtDate = (iso) => {
   if (!iso) return '';
@@ -708,6 +773,7 @@ async function refreshPack() {
   renderPlay();
   if (!state.busy && !state.running) idleProgress();
   refreshContent();
+  refreshServers().then(pingServers);
 }
 
 async function refreshStatus() {
@@ -765,10 +831,6 @@ function bind() {
   });
   $('#yggRegister').addEventListener('click', () => bba.openExternal(state.info.auth.yggdrasil.registerUrl).catch(showError));
   $('#yggReset').addEventListener('click', () => bba.openExternal(state.info.auth.yggdrasil.resetUrl).catch(showError));
-  $('#copyAddress').addEventListener('click', () => {
-    navigator.clipboard.writeText($('#serverAddress').textContent);
-    toast('Адрес скопирован', { ok: true, timeout: 2500 });
-  });
 
   $('#memRange').addEventListener('input', (e) => ($('#memValue').textContent = fmtMem(+e.target.value)));
   $('#memRange').addEventListener('change', (e) => saveSetting({ memoryMb: +e.target.value }));
@@ -820,6 +882,7 @@ async function init() {
   await Promise.all([refreshPack(), refreshStatus(), refreshNews()]);
   renderSettings();
   setInterval(refreshStatus, 30000);
+  setInterval(pingServers, 60000);
   setInterval(refreshNews, 10 * 60000);
   setInterval(() => !state.busy && !state.running && refreshPack(), 5 * 60000);
 }

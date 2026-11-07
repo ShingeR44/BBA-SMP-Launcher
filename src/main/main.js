@@ -94,6 +94,31 @@ function handle(channel, fn) {
   });
 }
 
+// ---------- Адреса сервера ----------
+// Список берётся из pack.json (servers), иначе из launcher.config.json (servers), иначе один адрес server.
+function normServer(x) {
+  if (!x || !x.host) return null;
+  const port = Number(x.port) || 25565;
+  return {
+    id: `${String(x.host).toLowerCase()}:${port}`,
+    host: String(x.host),
+    port,
+    name: x.name ? String(x.name) : null,
+    description: x.description ? String(x.description) : null,
+  };
+}
+function serverList(pack) {
+  const p = pack || cachedPack();
+  const pick = (a) => (Array.isArray(a) && a.length ? a : null);
+  const raw = pick(p && p.servers) || pick(config.servers) || [(p && p.server) || config.server];
+  const seen = new Set();
+  return raw.map(normServer).filter((x) => x && !seen.has(x.id) && seen.add(x.id));
+}
+function selectedServer(pack) {
+  const list = serverList(pack);
+  return list.find((x) => x.id === store.settings.serverAddress) || list[0] || null;
+}
+
 function recommendedMemory(pack) {
   const total = Store.totalMemoryMb();
   const rec = (pack && pack.memory && pack.memory.recommended) || 4096;
@@ -110,7 +135,7 @@ function packSummary(pack, installed) {
     version: pack.version || '—',
     minecraft: pack.minecraft,
     loader: pack.loader || { type: 'vanilla' },
-    server: pack.server || config.server,
+    server: selectedServer(pack),
     mods,
     totalSize: pack.files.reduce((s, f) => s + (f.size || 0), 0),
     installed,
@@ -217,7 +242,7 @@ async function play({ repair = false } = {}) {
       width: s.width,
       height: s.height,
       fullscreen: s.fullscreen,
-      server: s.autoConnect ? pack.server || config.server : null,
+      server: s.autoConnect ? selectedServer(pack) : null,
       clientId: account.type === 'ygg' ? '' : AUTH.msClientId,
       injector,
       launcherVersion: app.getVersion(),
@@ -370,10 +395,28 @@ function registerIpc() {
   handle('update:install', () => updater.install());
 
   handle('server:status', async () => {
-    const srv = (lastPack && lastPack.server) || config.server;
-    if (!srv || !srv.host) return { online: false, error: 'no_server' };
-    return { ...(await status.ping(srv.host, srv.port || 25565)), host: srv.host, port: srv.port || 25565 };
+    const srv = selectedServer(lastPack);
+    if (!srv) return { online: false, error: 'no_server' };
+    return { ...(await status.ping(srv.host, srv.port)), id: srv.id, host: srv.host, port: srv.port };
   });
+  handle('server:list', () => {
+    const sel = selectedServer(lastPack);
+    return serverList(lastPack).map((x) => ({ ...x, selected: !!sel && x.id === sel.id }));
+  });
+  handle('server:select', (id) => {
+    if (!serverList(lastPack).some((x) => x.id === id)) throw new Error('Такого адреса нет в списке');
+    store.setSettings({ serverAddress: id });
+    return serverList(lastPack).map((x) => ({ ...x, selected: x.id === id }));
+  });
+  // пинг всех адресов сразу — чтобы игрок видел, какой у него работает
+  handle('server:pingAll', async () =>
+    Promise.all(
+      serverList(lastPack).map(async (x) => {
+        const r = await status.ping(x.host, x.port, 5000);
+        return { id: x.id, online: !!r.online, latency: r.latency || null, players: r.players || null, error: r.error || null };
+      })
+    )
+  );
 
   handle('game:play', (opts) => play(opts || {}));
   handle('game:cancel', () => {
