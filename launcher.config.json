@@ -5,9 +5,9 @@
   "newsUrl": "https://bba.dimon20k.ru/launcher/news.json",
   "auth": {
     "yggdrasil": {
-      "url": "",
+      "url": "https://auth.bba.dimon20k.ru/authlib-injector",
       "title": "Аккаунт BBA",
-      "registerUrl": "",
+      "registerUrl": "https://auth.bba.dimon20k.ru/web/registration",
       "resetUrl": ""
     },
     "microsoftClientId": ""
