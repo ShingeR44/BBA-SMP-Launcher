@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "name": "BBA SMP",
+  "version": "2026.11.06-1",
+  "minecraft": "26.3",
+  "loader": { "type": "fabric", "version": "0.20.1" },
+  "server": { "host": "bba.dimon20k.ru", "port": 25565 },
+  "memory": { "recommended": 4096 },
+  "jvmArgs": [],
+  "managedDirs": ["mods"],
+  "files": [
+    {
+      "path": "mods/fabric-api-0.165.2+26.3.jar",
+      "url": "mods/fabric-api-0.165.2%2B26.3.jar",
+      "sha1": "2e364989e3f6efb97e1dbd12d80d835c7ab8c26c",
+      "size": 1779306,
+      "name": "Fabric API"
+    },
+    {
+      "path": "config/example.properties",
+      "url": "config/example.properties",
+      "sha1": "15bd250a3ba830892a8614365be7786b67c45edc",
+      "size": 7
+    },
+    {
+      "path": "options.txt",
+      "url": "options.txt",
+      "sha1": "d4c75fd2cb9487c281880d38a9266b38d4750221",
+      "size": 11,
+      "keep": true
+    }
+  ]
+}

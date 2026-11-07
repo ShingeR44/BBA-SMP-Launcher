@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'none'"
+    />
+    <title>BBA SMP</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Шапка как на сайте -->
+      <header class="topbar">
+        <a class="logo" data-page="home" title="BBA SMP"><span id="logo"></span></a>
+        <nav class="nav">
+          <button class="nav-item active" data-page="home">Играть</button>
+          <button class="nav-item" data-page="news">Новости<span class="nav-dot" id="newsDot" hidden></span></button>
+          <button class="nav-item" data-page="pack">Сборка</button>
+          <button class="nav-item" data-page="settings">Настройки</button>
+        </nav>
+        <div class="topbar-spacer"></div>
+        <div class="server-status" id="serverStatus">
+          <span class="dot"></span><span class="muted">Сервер:</span> <b id="serverStatusText">проверяем…</b>
+        </div>
+        <button class="icon-btn" id="themeBtn" title="Сменить тему" aria-label="Сменить тему">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><g fill="currentColor"><rect x="9" y="9" width="6" height="6"/><rect x="11" y="2" width="2" height="4"/><rect x="11" y="18" width="2" height="4"/><rect x="2" y="11" width="4" height="2"/><rect x="18" y="11" width="4" height="2"/><rect x="5" y="5" width="2" height="2"/><rect x="17" y="5" width="2" height="2"/><rect x="5" y="17" width="2" height="2"/><rect x="17" y="17" width="2" height="2"/></g></svg>
+        </button>
+        <div class="win-controls">
+          <button id="minBtn" title="Свернуть" aria-label="Свернуть"><svg viewBox="0 0 12 12" width="12" height="12"><rect x="1" y="6" width="10" height="1.5" fill="currentColor"/></svg></button>
+          <button id="closeBtn" class="close" title="Закрыть" aria-label="Закрыть"><svg viewBox="0 0 12 12" width="12" height="12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- Играть -->
+        <section class="page active" id="page-home">
+          <div class="hero">
+            <div class="wrap">
+              <h1 id="heroTitle">BBA SMP</h1>
+              <p>Выживание с модами для своей компании: вход по белому списку, свои ранги и живая карта мира. Лаунчер сам скачает сборку и подключит к серверу.</p>
+            </div>
+          </div>
+          <div class="wrap">
+            <div class="stats" id="homeStats"></div>
+            <div class="cols">
+              <div>
+                <h2>Адрес для входа</h2>
+                <div class="address">
+                  <code id="serverAddress">—</code>
+                  <button class="btn ghost small" id="copyAddress">Скопировать</button>
+                </div>
+                <p class="muted small" id="serverMotd"></p>
+              </div>
+              <div>
+                <h2>Перед первым входом</h2>
+                <ol class="steps">
+                  <li>Зарегистрируйтесь на сайте сервера и войдите в лаунчере — кнопка внизу слева.</li>
+                  <li>Попросите админа добавить ваш ник в белый список.</li>
+                  <li>Нажмите «Играть» — лаунчер установит игру, моды и сразу зайдёт на сервер.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Сборка -->
+        <section class="page" id="page-pack">
+          <div class="hero small">
+            <div class="wrap">
+              <h1>Сборка</h1>
+              <p>Моды ставятся и обновляются автоматически. Лишние файлы в папке mods удаляются, иначе сервер не пустит.</p>
+            </div>
+          </div>
+          <div class="wrap">
+            <div class="stats" id="packStats"></div>
+            <div class="toolbar">
+              <h2>Моды <span class="muted" id="modCount"></span></h2>
+              <div class="toolbar-actions">
+                <button class="btn ghost" data-folder="game">Папка игры</button>
+                <button class="btn ghost" data-folder="screenshots">Скриншоты</button>
+                <button class="btn ghost" id="repairBtn">Проверить файлы</button>
+              </div>
+            </div>
+            <div class="mods" id="modList"></div>
+          </div>
+        </section>
+
+        <!-- Новости -->
+        <section class="page" id="page-news">
+          <div class="hero small">
+            <div class="wrap">
+              <h1>Новости</h1>
+              <p>Всё, что публикуется на сайте сервера: обновления сборки, ивенты и объявления.</p>
+            </div>
+          </div>
+          <div class="wrap">
+            <div class="news-status muted small" id="newsStatus"></div>
+            <div class="news" id="newsList"></div>
+          </div>
+        </section>
+
+        <!-- Настройки -->
+        <section class="page" id="page-settings">
+          <div class="hero small">
+            <div class="wrap">
+              <h1>Настройки</h1>
+              <p>Память, Java и окно игры. Изменения сохраняются сразу.</p>
+            </div>
+          </div>
+          <div class="wrap">
+            <div class="settings">
+              <div class="row">
+                <div class="row-label"><b>Память для игры</b><span class="muted" id="memHint"></span></div>
+                <div class="row-control mem">
+                  <input type="range" id="memRange" min="1024" step="256" />
+                  <span class="mem-value" id="memValue"></span>
+                  <button class="link" id="memAuto">Авто</button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Java</b><span class="muted">По умолчанию лаунчер сам скачивает нужную Java от Mojang.</span></div>
+                <div class="row-control">
+                  <input type="text" id="javaPath" placeholder="Автоматически" readonly />
+                  <button class="btn ghost small" id="javaPick">Выбрать</button>
+                  <button class="link" id="javaAuto">Авто</button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Размер окна</b><span class="muted">Ширина × высота при запуске.</span></div>
+                <div class="row-control">
+                  <input type="number" id="width" min="640" max="7680" class="num" />
+                  <span class="muted">×</span>
+                  <input type="number" id="height" min="480" max="4320" class="num" />
+                  <label class="check"><input type="checkbox" id="fullscreen" /><span></span>Полный экран</label>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Сразу заходить на сервер</b><span class="muted">После загрузки игра подключится к BBA SMP сама.</span></div>
+                <div class="row-control"><label class="switch"><input type="checkbox" id="autoConnect" /><span></span></label></div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>После запуска игры</b></div>
+                <div class="row-control">
+                  <select id="afterLaunch">
+                    <option value="hide">Скрыть лаунчер</option>
+                    <option value="minimize">Свернуть лаунчер</option>
+                    <option value="keep">Оставить открытым</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Аргументы JVM</b><span class="muted">Для опытных. Например: -XX:+UseZGC</span></div>
+                <div class="row-control"><input type="text" id="jvmArgs" placeholder="—" /></div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Файлы</b><span class="muted" id="rootPath"></span></div>
+                <div class="row-control">
+                  <button class="btn ghost small" data-folder="game">Папка игры</button>
+                  <button class="btn ghost small" data-folder="logs">Логи</button>
+                </div>
+              </div>
+            </div>
+            <p class="muted small" id="aboutLine"></p>
+          </div>
+        </section>
+      </main>
+
+      <!-- Нижняя панель -->
+      <footer class="playbar">
+        <div class="account-box">
+          <button class="account-chip" id="accountChip" aria-haspopup="menu"></button>
+          <div class="account-menu" id="accountMenu" role="menu" hidden></div>
+        </div>
+        <div class="progress-area">
+          <div class="progress-text"><span id="progressText">Готово к запуску</span><span class="muted" id="progressDetail"></span></div>
+          <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+        <button class="play-btn" id="playBtn">Играть</button>
+      </footer>
+    </div>
+
+    <!-- Окно входа -->
+    <div class="modal-backdrop" id="loginModal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <button class="modal-close" id="loginClose" aria-label="Закрыть">
+          <svg viewBox="0 0 12 12" width="12" height="12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+        <div class="modal-head">
+          <h2 id="loginTitle">Вход</h2>
+          <p id="loginSubtitle">Войдите в аккаунт сервера, чтобы играть.</p>
+        </div>
+        <form class="modal-body" id="yggForm" autocomplete="on">
+          <div class="notice" id="yggNotice" hidden>
+            <b>Сервер авторизации ещё не подключён.</b> Админу нужно указать адрес в <code>launcher.config.json</code> → <code>auth.yggdrasil.url</code>.
+          </div>
+          <label class="field"><span>Ник</span><input type="text" id="yggUser" autocomplete="username" spellcheck="false" required /></label>
+          <label class="field"><span>Пароль</span><input type="password" id="yggPass" autocomplete="current-password" required /></label>
+          <div class="form-error" id="loginError" hidden></div>
+          <button class="btn primary wide" type="submit" id="yggSubmit">Войти</button>
+          <div class="form-links">
+            <button type="button" class="link" id="yggRegister" hidden>Регистрация</button>
+            <button type="button" class="link" id="yggReset" hidden>Забыли пароль?</button>
+          </div>
+        </form>
+        <div class="modal-alt" id="msAlt" hidden>
+          <div class="divider"><span>или</span></div>
+          <button class="btn ghost wide" id="msLogin">
+            <svg viewBox="0 0 21 21" width="18" height="18" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+            Войти через Microsoft
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toasts" id="toasts"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

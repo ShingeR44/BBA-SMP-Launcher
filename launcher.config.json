@@ -1,0 +1,20 @@
+{
+  "serverName": "BBA SMP",
+  "siteUrl": "https://bba.dimon20k.ru",
+  "packUrl": "https://bba.dimon20k.ru/launcher/pack.json",
+  "newsUrl": "https://bba.dimon20k.ru/launcher/news.json",
+  "auth": {
+    "yggdrasil": {
+      "url": "",
+      "title": "Аккаунт BBA",
+      "registerUrl": "",
+      "resetUrl": ""
+    },
+    "microsoftClientId": ""
+  },
+  "server": {
+    "host": "bba.dimon20k.ru",
+    "port": 25565
+  },
+  "dataFolder": ".bba-smp"
+}

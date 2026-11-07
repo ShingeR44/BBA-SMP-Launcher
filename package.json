@@ -1,0 +1,50 @@
+{
+  "name": "bba-launcher",
+  "productName": "BBA SMP Launcher",
+  "version": "1.0.0",
+  "description": "Лаунчер сервера BBA SMP: модпак, вход, новости, подключение к серверу",
+  "main": "src/main/main.js",
+  "author": "BBA SMP",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "build-pack": "node tools/build-pack.mjs"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "ru.dimon20k.bba.launcher",
+    "productName": "BBA SMP Launcher",
+    "files": [
+      "src/**/*",
+      "launcher.config.json",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "BBA SMP",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "BBA-SMP-Launcher-Setup-${version}.${ext}"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "portable": {
+      "artifactName": "BBA-SMP-Launcher-Portable-${version}.${ext}"
+    }
+  }
+}
