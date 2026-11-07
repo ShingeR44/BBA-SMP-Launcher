@@ -21,6 +21,7 @@
           <button class="nav-item" data-page="settings">Настройки</button>
         </nav>
         <div class="topbar-spacer"></div>
+        <button class="update-pill" id="updatePill" hidden></button>
         <div class="server-status" id="serverStatus">
           <span class="dot"></span><span class="muted">Сервер:</span> <b id="serverStatusText">проверяем…</b>
         </div>
@@ -70,20 +71,29 @@
           <div class="hero small">
             <div class="wrap">
               <h1>Сборка</h1>
-              <p>Моды ставятся и обновляются автоматически. Лишние файлы в папке mods удаляются, иначе сервер не пустит.</p>
+              <p>Моды сервера ставятся и обновляются сами — убрать их нельзя. Свои клиентские моды, шейдеры и ресурспаки можно добавить ниже.</p>
             </div>
           </div>
           <div class="wrap">
             <div class="stats" id="packStats"></div>
             <div class="toolbar">
-              <h2>Моды <span class="muted" id="modCount"></span></h2>
+              <div class="segments" role="tablist" id="contentTabs">
+                <button class="segment active" data-kind="pack" role="tab">Моды сборки <span class="count" id="countPack"></span></button>
+                <button class="segment" data-kind="mods" role="tab">Мои моды <span class="count" id="countMods"></span></button>
+                <button class="segment" data-kind="shaderpacks" role="tab">Шейдеры <span class="count" id="countShaderpacks"></span></button>
+                <button class="segment" data-kind="resourcepacks" role="tab">Ресурспаки <span class="count" id="countResourcepacks"></span></button>
+              </div>
               <div class="toolbar-actions">
-                <button class="btn ghost" data-folder="game">Папка игры</button>
-                <button class="btn ghost" data-folder="screenshots">Скриншоты</button>
-                <button class="btn ghost" id="repairBtn">Проверить файлы</button>
+                <button class="btn primary small" id="contentAdd" hidden>+ Добавить файлы</button>
+                <button class="btn ghost small" id="contentFolder">Открыть папку</button>
+                <button class="btn ghost small" id="repairBtn" title="Проверить и восстановить файлы игры и сборки">Проверить файлы</button>
               </div>
             </div>
+            <div class="content-note" id="contentNote" hidden></div>
             <div class="mods" id="modList"></div>
+          </div>
+          <div class="drop-overlay" id="dropOverlay" hidden>
+            <div><b>Отпустите, чтобы добавить</b><span>.jar — моды, .zip — шейдеры и ресурспаки</span></div>
           </div>
         </section>
 
@@ -153,6 +163,13 @@
               <div class="row">
                 <div class="row-label"><b>Аргументы JVM</b><span class="muted">Для опытных. Например: -XX:+UseZGC</span></div>
                 <div class="row-control"><input type="text" id="jvmArgs" placeholder="—" /></div>
+              </div>
+              <div class="row">
+                <div class="row-label"><b>Версия лаунчера</b><span class="muted" id="updateText">—</span></div>
+                <div class="row-control">
+                  <button class="btn ghost small" id="updateCheck">Проверить обновления</button>
+                  <button class="btn primary small" id="updateInstall" hidden>Перезапустить и обновить</button>
+                </div>
               </div>
               <div class="row">
                 <div class="row-label"><b>Файлы</b><span class="muted" id="rootPath"></span></div>

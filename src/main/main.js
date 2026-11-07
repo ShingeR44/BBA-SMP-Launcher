@@ -9,6 +9,8 @@ const modpack = require('./modpack');
 const status = require('./status');
 const ygg = require('./yggdrasil');
 const news = require('./news');
+const { Content } = require('./content');
+const { Updater } = require('./updater');
 
 // ---------- Конфиг лаунчера ----------
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'launcher.config.json'), 'utf8'));
@@ -26,6 +28,17 @@ let store = null;
 let gameProcess = null;
 let abort = null;
 let lastPack = null;
+let content = null;
+let updater = null;
+// pack.json без сети: берём сохранённый, чтобы вкладка «Сборка» работала офлайн
+function cachedPack() {
+  if (lastPack) return lastPack;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, 'pack.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', () => {
@@ -190,6 +203,8 @@ async function play({ repair = false } = {}) {
       onStage: (t) => progress(t),
       onProgress: bytesProgress('Загружаем моды…'),
     });
+    // свои моды игрока, которые дублируют моды сборки или сделаны под другой загрузчик, выключаем
+    const disabled = await content.enforce();
 
     // 8. Запуск
     setStage('launch', 'Запускаем игру…');
@@ -223,7 +238,7 @@ async function play({ repair = false } = {}) {
         }
       },
     });
-    send('game-state', { running: true, visible: false, removed: sync.removed });
+    send('game-state', { running: true, visible: false, removed: sync.removed, disabled });
     gameProcess.on('error', (e) => {
       send('game-state', { running: false, error: `Не удалось запустить Java: ${e.message}` });
       gameProcess = null;
@@ -321,6 +336,39 @@ function registerIpc() {
 
   handle('news:list', () => news.fetchNews(config.newsUrl, ROOT));
 
+  // ---- свои файлы игрока ----
+  const FILTERS = {
+    mods: [{ name: 'Моды (.jar)', extensions: ['jar'] }],
+    shaderpacks: [{ name: 'Шейдеры (.zip)', extensions: ['zip'] }],
+    resourcepacks: [{ name: 'Ресурспаки (.zip)', extensions: ['zip'] }],
+  };
+  handle('content:list', (kind) => content.list(kind));
+  handle('content:add', async (kind, paths) => {
+    if (!paths || !paths.length) {
+      const r = await dialog.showOpenDialog(win, {
+        title: 'Добавить файлы',
+        filters: [...(FILTERS[kind] || []), { name: 'Все подходящие', extensions: ['jar', 'zip'] }],
+        properties: ['openFile', 'multiSelections'],
+      });
+      if (r.canceled) return { added: [], rejected: [] };
+      paths = r.filePaths;
+    }
+    return content.add(paths.filter((p) => typeof p === 'string'), kind);
+  });
+  handle('content:toggle', (kind, file, enabled) => content.toggle(kind, file, !!enabled));
+  handle('content:remove', (kind, file) => content.remove(kind, file));
+  handle('content:folder', async (kind) => {
+    const dir = content.dir(kind);
+    fs.mkdirSync(dir, { recursive: true });
+    const err = await shell.openPath(dir);
+    if (err) throw new Error(err);
+  });
+
+  // ---- обновление лаунчера ----
+  handle('update:state', () => updater.state);
+  handle('update:check', () => updater.check());
+  handle('update:install', () => updater.install());
+
   handle('server:status', async () => {
     const srv = (lastPack && lastPack.server) || config.server;
     if (!srv || !srv.host) return { online: false, error: 'no_server' };
@@ -336,8 +384,16 @@ function registerIpc() {
 
 app.whenReady().then(async () => {
   store = await new Store().init();
+  content = new Content({ gameDir: GAME_DIR, getPack: cachedPack, trash: (p) => shell.trashItem(p) });
+  updater = new Updater({
+    repo: config.update && config.update.github,
+    allowPrerelease: !!(config.update && config.update.allowPrerelease),
+    send,
+    canInstall: () => !gameProcess,
+  });
   registerIpc();
   createWindow();
+  updater.start();
 });
 
 app.on('window-all-closed', () => {

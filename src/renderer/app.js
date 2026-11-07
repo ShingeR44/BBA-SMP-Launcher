@@ -23,6 +23,9 @@ const state = {
   running: false,
   news: [],
   newsLoaded: false,
+  contentKind: 'pack',
+  content: {},
+  update: null,
 };
 
 const LOADER_NAMES = { vanilla: 'Ванилла', fabric: 'Fabric', quilt: 'Quilt', neoforge: 'NeoForge', forge: 'Forge' };
@@ -145,19 +148,242 @@ function renderPack() {
     stat('Размер', p ? fmtSize(p.totalSize) : '—'),
     stat('Установлено', p ? (p.installed ? (p.upToDate ? 'актуальная' : `${p.installed} → обновить`) : 'нет') : '—', p && p.upToDate ? 'ok' : 'warn')
   );
-  const list = $('#modList');
-  if (!p) {
-    list.replaceChildren(el('div', { class: 'empty' }, 'Не удалось получить сборку. Проверьте интернет.'));
-    $('#modCount').textContent = '';
-    return;
-  }
-  $('#modCount').textContent = p.mods.length ? `· ${p.mods.length}` : '';
-  const mods = [...p.mods].sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file));
-  list.replaceChildren(
-    ...(mods.length
-      ? mods.map((m) => el('div', { class: 'mod', title: m.file }, el('span', { class: 'name' }, m.name || prettyMod(m.file)), el('span', { class: 'size' }, m.size ? fmtSize(m.size) : '')))
-      : [el('div', { class: 'empty' }, 'В сборке пока нет модов.')])
+  renderContent();
+}
+
+const KIND_WORDS = {
+  mods: { many: 'моды', add: 'клиентские моды (.jar)', none: 'Своих модов пока нет' },
+  shaderpacks: { many: 'шейдеры', add: 'шейдеры (.zip)', none: 'Шейдеров пока нет' },
+  resourcepacks: { many: 'ресурспаки', add: 'ресурспаки и текстуры (.zip)', none: 'Ресурспаков пока нет' },
+};
+
+async function refreshContent(kinds = ['mods', 'shaderpacks', 'resourcepacks']) {
+  await Promise.all(
+    kinds.map(async (k) => {
+      try {
+        state.content[k] = await bba.content.list(k);
+      } catch {
+        /* сборка ещё не загружена */
+      }
+    })
   );
+  renderContent();
+}
+
+function renderContent() {
+  const kind = state.contentKind;
+  const p = state.pack;
+  $$('#contentTabs .segment').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
+  $('#countPack').textContent = p && p.mods.length ? p.mods.length : '';
+  for (const k of ['mods', 'shaderpacks', 'resourcepacks']) {
+    const c = state.content[k];
+    $(`#count${k[0].toUpperCase()}${k.slice(1)}`).textContent = c && c.user.length ? c.user.length : '';
+  }
+  const list = $('#modList');
+  const note = $('#contentNote');
+  note.hidden = true;
+  $('#contentAdd').hidden = kind === 'pack';
+
+  if (kind === 'pack') {
+    list.classList.remove('single');
+    if (!p) return list.replaceChildren(el('div', { class: 'empty' }, 'Не удалось получить сборку. Проверьте интернет.'));
+    const mods = [...p.mods].sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file));
+    note.hidden = false;
+    note.textContent = 'Эти моды нужны для игры на сервере. Лаунчер сам ставит и обновляет их, а если удалить или подменить файл вручную — вернёт при следующем запуске.';
+    return list.replaceChildren(
+      ...(mods.length
+        ? mods.map((m) => el('div', { class: 'mod', title: m.file }, el('span', { class: 'name' }, el('span', { class: 'lock', title: 'Мод сборки' }, '🔒'), m.name || prettyMod(m.file)), el('span', { class: 'size' }, m.size ? fmtSize(m.size) : '')))
+        : [el('div', { class: 'empty' }, 'В сборке пока нет модов.')])
+    );
+  }
+
+  list.classList.add('single');
+  const c = state.content[kind];
+  const words = KIND_WORDS[kind];
+  if (!c) return list.replaceChildren(el('div', { class: 'empty' }, 'Загружаем…'));
+  if (!c.allowed) {
+    $('#contentAdd').hidden = true;
+    note.hidden = false;
+    note.textContent = `Админ сервера запретил добавлять свои ${words.many}.`;
+  } else if (c.hint) {
+    note.hidden = false;
+    note.textContent = c.hint;
+  } else if (kind === 'mods') {
+    note.hidden = false;
+    note.textContent = 'Только клиентские моды (миникарта, интерфейс, оптимизация). Если мод дублирует мод сборки или сделан под другой загрузчик, лаунчер его не добавит или выключит перед запуском.';
+  }
+
+  const items = [];
+  // файлы из сборки в этой папке (например, шейдер от админа) — тоже защищены
+  for (const it of c.pack) {
+    items.push(
+      el('div', { class: 'user-item' },
+        el('span', { class: 'lock', title: 'Файл сборки' }, '🔒'),
+        el('div', { class: 'meta' }, el('b', {}, it.name), el('span', {}, 'из сборки — убрать нельзя')),
+        el('span', { class: 'size' }, it.size ? fmtSize(it.size) : '')
+      )
+    );
+  }
+  for (const it of c.user) {
+    const sw = el('label', { class: 'switch', title: it.enabled ? 'Выключить' : 'Включить' }, el('input', { type: 'checkbox' }), el('span'));
+    sw.querySelector('input').checked = it.enabled;
+    sw.querySelector('input').addEventListener('change', (e) => toggleContent(kind, it, e.target.checked));
+    const sub = [it.version ? `v${it.version}` : null, it.file].filter(Boolean).join(' · ');
+    items.push(
+      el('div', { class: `user-item${it.enabled ? '' : ' off'}` },
+        sw,
+        el('div', { class: 'meta' }, el('b', { title: it.file }, it.name), it.problem ? el('span', { class: 'problem' }, it.problem) : el('span', {}, sub)),
+        el('span', { class: 'size' }, it.size ? fmtSize(it.size) : ''),
+        el('button', { class: 'del', title: 'Удалить в корзину', onclick: () => removeContent(kind, it) }, 'Удалить')
+      )
+    );
+  }
+  if (c.allowed) {
+    items.push(
+      el('div', { class: 'dropzone', onclick: () => addContent(kind) },
+        el('b', {}, c.user.length ? 'Добавить ещё' : words.none),
+        `Перетащите сюда ${words.add} или нажмите, чтобы выбрать файлы`
+      )
+    );
+  }
+  list.replaceChildren(...items);
+}
+
+async function addContent(kind, paths) {
+  try {
+    const r = await bba.content.add(kind, paths);
+    const label = { mods: 'Мои моды', shaderpacks: 'Шейдеры', resourcepacks: 'Ресурспаки' };
+    if (r.added.length) {
+      const where = [...new Set(r.added.map((a) => label[a.kind]))].join(', ');
+      toast(`Добавлено: ${r.added.length} → ${where}`, { ok: true, timeout: 3500 });
+      // если файл оказался другого типа — переключаемся на его раздел
+      if (r.added.every((a) => a.kind !== kind)) state.contentKind = r.added[0].kind;
+    }
+    for (const x of r.rejected) toast(`${x.file}: ${x.reason}`, { timeout: 9000 });
+    await refreshContent();
+  } catch (e) {
+    showError(e);
+  }
+}
+
+async function toggleContent(kind, it, enabled) {
+  try {
+    await bba.content.toggle(kind, it.file, enabled);
+  } catch (e) {
+    showError(e);
+  }
+  refreshContent([kind]);
+}
+
+async function removeContent(kind, it) {
+  if (!confirm(`Удалить «${it.name}»? Файл попадёт в корзину.`)) return;
+  try {
+    await bba.content.remove(kind, it.file);
+  } catch (e) {
+    showError(e);
+  }
+  refreshContent([kind]);
+}
+
+function bindDrop() {
+  const page = $('#page-pack');
+  const overlay = $('#dropOverlay');
+  let depth = 0;
+  const hasFiles = (e) => [...(e.dataTransfer && e.dataTransfer.types) || []].includes('Files');
+  page.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth++;
+    overlay.hidden = false;
+  });
+  page.addEventListener('dragover', (e) => hasFiles(e) && e.preventDefault());
+  page.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (!depth) overlay.hidden = true;
+  });
+  page.addEventListener('drop', (e) => {
+    e.preventDefault();
+    depth = 0;
+    overlay.hidden = true;
+    const paths = bba.content.pathsFor(e.dataTransfer.files);
+    if (paths.length) addContent(state.contentKind === 'pack' ? 'mods' : state.contentKind, paths);
+  });
+  // файлы, брошенные мимо вкладки, не должны открываться в окне
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+}
+
+// ---------- Обновление лаунчера ----------
+function renderUpdate() {
+  const u = state.update;
+  const pill = $('#updatePill');
+  const text = $('#updateText');
+  const install = $('#updateInstall');
+  const check = $('#updateCheck');
+  pill.hidden = true;
+  pill.className = 'update-pill';
+  install.hidden = true;
+  check.disabled = false;
+  const ver = `v${(state.info && state.info.version) || ''}`;
+  if (!u) return (text.textContent = ver);
+  switch (u.status) {
+    case 'checking':
+      text.textContent = `${ver} · проверяем обновления…`;
+      check.disabled = true;
+      break;
+    case 'latest':
+      text.textContent = `${ver} · установлена последняя версия`;
+      break;
+    case 'downloading':
+      text.textContent = `${ver} · загружаем v${u.version}: ${u.percent || 0}%`;
+      pill.hidden = false;
+      pill.textContent = `Обновление ${u.percent || 0}%`;
+      check.disabled = true;
+      break;
+    case 'ready':
+      text.textContent = `${ver} · v${u.version} скачана и будет установлена при перезапуске`;
+      pill.hidden = false;
+      pill.classList.add('ready');
+      pill.textContent = `Обновить до v${u.version}`;
+      install.hidden = false;
+      check.hidden = true;
+      break;
+    case 'available':
+      text.textContent = `${ver} · доступна v${u.version}${u.mode === 'portable' ? ' (portable-версию нужно скачать заново)' : ''}`;
+      pill.hidden = false;
+      pill.classList.add('available');
+      pill.textContent = `Новая версия v${u.version}`;
+      break;
+    case 'error':
+      text.textContent = `${ver} · не удалось проверить обновления: ${u.error}`;
+      break;
+    default:
+      text.textContent = u.mode === 'dev' ? `${ver} · режим разработки` : ver;
+  }
+}
+
+function onUpdateState(u) {
+  const prev = state.update;
+  state.update = u;
+  renderUpdate();
+  if (u.status === 'ready' && (!prev || prev.status !== 'ready')) {
+    toast(`Обновление лаунчера v${u.version} готово`, { ok: true, timeout: 0, actions: [{ label: 'Перезапустить', run: installUpdate }, { label: 'Позже', run: () => {} }] });
+  }
+}
+
+async function installUpdate() {
+  try {
+    await bba.update.install();
+  } catch (e) {
+    showError(e);
+  }
+}
+
+function updatePillClick() {
+  const u = state.update;
+  if (!u) return;
+  if (u.status === 'ready') installUpdate();
+  else if (u.status === 'available' && u.url) bba.openExternal(u.url).catch(showError);
 }
 
 function prettyMod(file) {
@@ -481,6 +707,7 @@ async function refreshPack() {
   renderPack();
   renderPlay();
   if (!state.busy && !state.running) idleProgress();
+  refreshContent();
 }
 
 async function refreshStatus() {
@@ -504,6 +731,22 @@ function bind() {
   });
   $('#playBtn').addEventListener('click', () => play());
   $('#repairBtn').addEventListener('click', () => play({ repair: true }));
+  $$('#contentTabs .segment').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.contentKind = b.dataset.kind;
+      renderContent();
+      if (b.dataset.kind !== 'pack') refreshContent([b.dataset.kind]);
+    })
+  );
+  $('#contentAdd').addEventListener('click', () => addContent(state.contentKind));
+  $('#contentFolder').addEventListener('click', () =>
+    (state.contentKind === 'pack' ? bba.openFolder('mods') : bba.content.folder(state.contentKind)).catch(showError)
+  );
+  bindDrop();
+  $('#updatePill').addEventListener('click', updatePillClick);
+  $('#updateCheck').addEventListener('click', () => bba.update.check().then(onUpdateState).catch(showError));
+  $('#updateInstall').addEventListener('click', installUpdate);
+  bba.on('update-state', onUpdateState);
   $('#accountChip').addEventListener('click', (e) => {
     e.stopPropagation();
     toggleAccountMenu();
@@ -548,7 +791,8 @@ function bind() {
     if (g.running) {
       state.busy = false;
       setProgress(g.visible ? 'Игра запущена — удачи на сервере!' : 'Игра загружается…', g.visible ? 1 : null, '', !g.visible);
-      if (g.removed && g.removed.length) toast(`Удалены лишние файлы: ${g.removed.length}`, { ok: true });
+      if (g.removed && g.removed.length) toast(`Убраны моды, которых больше нет в сборке: ${g.removed.length}`, { ok: true });
+      if (g.disabled && g.disabled.length) toast(`Выключены свои моды, мешающие сборке:\n${g.disabled.map((d) => `• ${d.name} — ${d.reason}`).join('\n')}`, { timeout: 15000 });
     } else {
       if (g.error) {
         setProgress('Игра завершилась с ошибкой');
@@ -572,6 +816,7 @@ async function init() {
   renderPlay();
   setProgress('Загружаем информацию о сборке…', null, '', true);
   state.running = await bba.game.running();
+  bba.update.state().then(onUpdateState).catch(() => {});
   await Promise.all([refreshPack(), refreshStatus(), refreshNews()]);
   renderSettings();
   setInterval(refreshStatus, 30000);

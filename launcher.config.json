@@ -16,5 +16,9 @@
     "host": "bba.dimon20k.ru",
     "port": 25565
   },
-  "dataFolder": ".bba-smp"
+  "dataFolder": ".bba-smp",
+  "update": {
+    "github": "ShingeR44/BBA-SMP-Launcher",
+    "allowPrerelease": false
+  }
 }

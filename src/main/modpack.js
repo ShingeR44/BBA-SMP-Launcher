@@ -21,7 +21,7 @@ function validate(pack) {
     }
     f.path = norm;
   }
-  pack.managedDirs = Array.isArray(pack.managedDirs) ? pack.managedDirs : ['mods'];
+  pack.managedDirs = Array.isArray(pack.managedDirs) ? pack.managedDirs : ['mods', 'shaderpacks', 'resourcepacks'];
   return pack;
 }
 
@@ -75,7 +75,8 @@ async function walk(dir, base = dir, out = []) {
  * Приводит папку игры в соответствие со сборкой.
  * - качает недостающие/изменённые файлы;
  * - файлы с "keep": true (настройки) скачиваются, только если их нет;
- * - в managedDirs удаляет всё, чего нет в сборке (лишние моды не пустят на сервер).
+ * - в managedDirs удаляет файлы, которых нет в сборке. В mods/shaderpacks/resourcepacks, если админ
+ *   разрешил свои файлы (userContent), удаляются только убранные из сборки файлы, а файлы игрока остаются.
  */
 async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onStage } = {}) {
   const state = await readState(root);
@@ -116,8 +117,20 @@ async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onSta
 
   // чистим управляемые папки
   const removed = [];
+  const uc = pack.userContent || {};
   for (const dir of pack.managedDirs) {
+    const clean = dir.replace(/\/$/, '');
     const abs = path.join(gameDir, dir);
+    if (uc[clean] !== false && ['mods', 'shaderpacks', 'resourcepacks'].includes(clean)) {
+      // игрокам можно класть сюда свои файлы: удаляем только то, что раньше было в сборке и из неё убрано
+      for (const old of Object.keys(state.files || {})) {
+        if (old.toLowerCase().startsWith(`${clean.toLowerCase()}/`) && !wanted.has(old.toLowerCase())) {
+          await fsp.rm(path.join(gameDir, ...old.split('/')), { force: true });
+          removed.push(old);
+        }
+      }
+      continue;
+    }
     for (const rel of await walk(abs)) {
       const full = `${dir.replace(/\/$/, '')}/${rel}`;
       if (!wanted.has(full.toLowerCase())) {

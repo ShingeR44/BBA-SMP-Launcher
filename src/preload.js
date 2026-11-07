@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 async function call(channel, ...args) {
   const r = await ipcRenderer.invoke(channel, ...args);
@@ -11,7 +11,7 @@ async function call(channel, ...args) {
   return r.data;
 }
 
-const EVENTS = ['progress', 'game-state'];
+const EVENTS = ['progress', 'game-state', 'update-state'];
 
 contextBridge.exposeInMainWorld('bba', {
   info: () => call('app:info'),
@@ -32,6 +32,20 @@ contextBridge.exposeInMainWorld('bba', {
   },
   pack: { info: () => call('pack:info') },
   news: { list: () => call('news:list') },
+  content: {
+    list: (kind) => call('content:list', kind),
+    add: (kind, paths) => call('content:add', kind, paths || null),
+    toggle: (kind, file, enabled) => call('content:toggle', kind, file, enabled),
+    remove: (kind, file) => call('content:remove', kind, file),
+    folder: (kind) => call('content:folder', kind),
+    // путь к перетащенному файлу (в Electron 32+ File.path больше нет)
+    pathsFor: (files) => [...files].map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+  },
+  update: {
+    state: () => call('update:state'),
+    check: () => call('update:check'),
+    install: () => call('update:install'),
+  },
   server: { status: () => call('server:status') },
   game: {
     play: (opts) => call('game:play', opts),

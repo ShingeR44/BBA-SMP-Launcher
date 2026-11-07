@@ -15,7 +15,8 @@ const opt = (name, def) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : def;
 };
-const dir = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+const BOOL_FLAGS = ['--help', '--no-user-mods', '--no-user-shaders', '--no-user-resourcepacks', '--user-content'];
+const dir = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !BOOL_FLAGS.includes(args[i - 1])));
 if (!dir || args.includes('--help')) {
   console.log(`Использование: node tools/build-pack.mjs <папка> [параметры]
 
@@ -27,6 +28,8 @@ if (!dir || args.includes('--help')) {
   --memory 4096               рекомендуемая память, МБ
   --keep options.txt,servers.dat   файлы/папки, которые не перезаписываются у игроков
   --managed mods              папки, из которых удаляются лишние файлы (через запятую)
+  --no-user-mods              запретить игрокам свои моды (также --no-user-shaders, --no-user-resourcepacks;
+                              --user-content снова всё разрешает)
 
 Параметры, которые не указаны, берутся из существующего <папка>/pack.json.`);
   process.exit(dir ? 0 : 1);
@@ -57,7 +60,13 @@ if (opt('server')) {
   server = { host, port: port ? Number(port) : 25565 };
 }
 const keep = (opt('keep') || (prev._keep || ['options.txt', 'servers.dat']).join(',')).split(',').map((s) => s.trim()).filter(Boolean);
-const managed = (opt('managed') || (prev.managedDirs || ['mods']).join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+const managed = (opt('managed') || (prev.managedDirs || ['mods', 'shaderpacks', 'resourcepacks']).join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+// свои моды/шейдеры/ресурспаки игроков: --no-user-mods, --no-user-shaders, --no-user-resourcepacks
+const userContent = { mods: true, shaderpacks: true, resourcepacks: true, ...(prev.userContent || {}) };
+if (args.includes('--no-user-mods')) userContent.mods = false;
+if (args.includes('--no-user-shaders')) userContent.shaderpacks = false;
+if (args.includes('--no-user-resourcepacks')) userContent.resourcepacks = false;
+if (args.includes('--user-content')) Object.assign(userContent, { mods: true, shaderpacks: true, resourcepacks: true });
 const now = new Date();
 const pad = (n) => String(n).padStart(2, '0');
 const version = opt('version', `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`);
@@ -126,6 +135,7 @@ const pack = {
   memory: { recommended: Number(opt('memory', (prev.memory && prev.memory.recommended) || 4096)) },
   jvmArgs: prev.jvmArgs || [],
   managedDirs: managed,
+  userContent,
   _keep: keep,
   files,
 };
