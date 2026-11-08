@@ -62,7 +62,7 @@ async function fetchJson(url, { signal, noCache = false, timeoutMs = 15000 } = {
 const IDLE_TIMEOUT = 30000; // если данные не идут 30 секунд — переподключаемся
 
 async function downloadFile(task, { signal, onBytes } = {}) {
-  const { url, dest, sha1, sha256, size } = task;
+  const { url, dest, sha1, sha256, sha512, size, headers } = task;
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   const tmp = `${dest}.part`;
   let lastErr;
@@ -77,15 +77,17 @@ async function downloadFile(task, { signal, onBytes } = {}) {
       idle = setTimeout(() => ac.abort(), IDLE_TIMEOUT);
     };
     try {
-      const res = await fetch(url, { signal: ac.signal, headers: { 'User-Agent': UA } });
+      const res = await fetch(url, { signal: ac.signal, headers: { 'User-Agent': UA, ...(headers || {}) } });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} — ${url}`);
       const hash = crypto.createHash('sha1');
       const hash256 = sha256 ? crypto.createHash('sha256') : null;
+      const hash512 = sha512 ? crypto.createHash('sha512') : null; // sha512 в base64 — как в latest.yml
       const counter = new Transform({
         transform(chunk, _enc, cb) {
           bump();
           hash.update(chunk);
           if (hash256) hash256.update(chunk);
+          if (hash512) hash512.update(chunk);
           received += chunk.length;
           if (onBytes) onBytes(chunk.length);
           cb(null, chunk);
@@ -94,6 +96,9 @@ async function downloadFile(task, { signal, onBytes } = {}) {
       await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp));
       if (size != null && received !== size) {
         throw new Error(`Размер файла не совпал: ${path.basename(dest)} (${received} вместо ${size})`);
+      }
+      if (sha512 && hash512.digest('base64') !== sha512) {
+        throw new Error(`Контрольная сумма не совпала: ${path.basename(dest)}`);
       }
       if (sha256 && hash256.digest('hex') !== String(sha256).toLowerCase()) {
         throw new Error(`Контрольная сумма не совпала: ${path.basename(dest)}`);
