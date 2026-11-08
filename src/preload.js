@@ -39,7 +39,8 @@ contextBridge.exposeInMainWorld('bba', {
     remove: (kind, file) => call('content:remove', kind, file),
     folder: (kind) => call('content:folder', kind),
     // путь к перетащенному файлу (в Electron 32+ File.path больше нет)
-    pathsFor: (files) => [...files].map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+    // FileList целиком через contextBridge не проходит — передаём файлы по одному
+    pathFor: (file) => webUtils.getPathForFile(file),
   },
   update: {
     state: () => call('update:state'),

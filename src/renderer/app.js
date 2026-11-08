@@ -307,8 +307,18 @@ function bindDrop() {
     e.preventDefault();
     depth = 0;
     overlay.hidden = true;
-    const paths = bba.content.pathsFor(e.dataTransfer.files);
-    if (paths.length) addContent(state.contentKind === 'pack' ? 'mods' : state.contentKind, paths);
+    let paths = [];
+    try {
+      paths = [...e.dataTransfer.files].map((f) => bba.content.pathFor(f)).filter(Boolean);
+    } catch (err) {
+      showError(new Error(`Не удалось прочитать перетащенные файлы: ${err.message}`));
+      return;
+    }
+    if (!paths.length) {
+      toast('Перетащите файлы .jar или .zip из папки на компьютере (не из браузера и не из открытого архива)', { timeout: 6000 });
+      return;
+    }
+    addContent(state.contentKind === 'pack' ? 'mods' : state.contentKind, paths);
   });
   // файлы, брошенные мимо вкладки, не должны открываться в окне
   window.addEventListener('dragover', (e) => e.preventDefault());
