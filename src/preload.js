@@ -11,11 +11,16 @@ async function call(channel, ...args) {
   return r.data;
 }
 
-const EVENTS = ['progress', 'game-state', 'update-state'];
+const EVENTS = ['progress', 'game-state', 'update-state', 'win-state'];
 
 contextBridge.exposeInMainWorld('bba', {
   info: () => call('app:info'),
-  win: { minimize: () => call('win:minimize'), close: () => call('win:close') },
+  win: {
+    minimize: () => call('win:minimize'),
+    maximize: () => call('win:maximize'),
+    isMaximized: () => call('win:isMaximized'),
+    close: () => call('win:close'),
+  },
   openExternal: (url) => call('shell:external', url),
   openFolder: (which) => call('shell:folder', which),
   settings: {

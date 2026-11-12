@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS = {
   selectedAccount: null,
   lastNewsSeen: null,
   serverAddress: null, // выбранный адрес сервера (host:port)
+  windowBounds: null, // размер и положение окна
+  windowMaximized: false,
 };
 
 class Store {

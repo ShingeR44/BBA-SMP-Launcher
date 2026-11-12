@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Store } = require('./store');
@@ -53,10 +53,23 @@ function send(channel, data) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
 }
 
+// Размер окна: прошлый, если он ещё помещается на экран; иначе — под рабочую область экрана
+function initialBounds() {
+  const saved = store.settings.windowBounds;
+  const fits = (b) =>
+    b && screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return b.x >= a.x - 50 && b.y >= a.y - 50 && b.x + Math.min(b.width, 300) <= a.x + a.width && b.y + 100 <= a.y + a.height;
+    });
+  if (fits(saved)) return saved;
+  const wa = screen.getPrimaryDisplay().workAreaSize;
+  return { width: Math.max(980, Math.min(1360, Math.round(wa.width * 0.8))), height: Math.max(640, Math.min(860, Math.round(wa.height * 0.85))) };
+}
+
 function createWindow() {
+  const bounds = initialBounds();
   win = new BrowserWindow({
-    width: 1120,
-    height: 720,
+    ...bounds,
     minWidth: 980,
     minHeight: 640,
     frame: false,
@@ -73,7 +86,25 @@ function createWindow() {
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (store.settings.windowMaximized) win.maximize();
+    win.show();
+  });
+  // запоминаем размер, положение и «развёрнуто ли»
+  let saveTimer = null;
+  const saveBounds = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!win || win.isDestroyed() || win.isMinimized()) return;
+      const maximized = win.isMaximized();
+      store.setSettings(maximized ? { windowMaximized: true } : { windowMaximized: false, windowBounds: win.getBounds() });
+    }, 400);
+  };
+  win.on('resize', saveBounds);
+  win.on('move', saveBounds);
+  const sendMax = () => send('win-state', { maximized: win.isMaximized() });
+  win.on('maximize', () => (sendMax(), saveBounds()));
+  win.on('unmaximize', () => (sendMax(), saveBounds()));
   // ссылки — только во внешний браузер
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
@@ -309,6 +340,12 @@ function registerIpc() {
   }));
 
   handle('win:minimize', () => win.minimize());
+  handle('win:maximize', () => {
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    return win.isMaximized();
+  });
+  handle('win:isMaximized', () => win.isMaximized());
   handle('win:close', () => win.close());
 
   handle('shell:external', (url) => {

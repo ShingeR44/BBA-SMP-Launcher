@@ -21,7 +21,10 @@ async function request(url, { method = 'GET', body, timeout = TIMEOUT } = {}) {
       signal: AbortSignal.timeout(timeout),
     });
   } catch (e) {
-    throw new AuthError(`Сервер авторизации недоступен (${new URL(url).host})`, 'network');
+    throw new AuthError(
+      `Нет связи с сервером авторизации ${new URL(url).host}. Если включён VPN — добавьте dimon20k.ru в исключения VPN или выключите его на время входа.`,
+      'network'
+    );
   }
   const text = await res.text();
   let data = null;

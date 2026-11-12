@@ -126,7 +126,15 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; }
 .page { display: none; padding-bottom: 40px; animation: fade 0.18s ease; }
 .page.active { display: block; }
 @keyframes fade { from { transform: translateY(6px); } to { transform: none; } }
-.wrap { padding: 0 var(--pad); max-width: 1180px; }
+.wrap { padding: 0 var(--pad); max-width: 1240px; margin: 0 auto; }
+@media (min-width: 1500px) {
+  :root { --pad: 64px; }
+  body { font-size: 16px; }
+  .wrap { max-width: 1400px; }
+  .hero h1 { font-size: 80px; }
+  .hero p { font-size: 20px; max-width: 640px; }
+  .stat .value { font-size: 24px; }
+}
 
 .hero { background: var(--accent); color: var(--on-accent); padding: 38px 0 40px; }
 .hero h1 { font-size: 68px; line-height: 1; font-weight: 800; margin-bottom: 16px; }

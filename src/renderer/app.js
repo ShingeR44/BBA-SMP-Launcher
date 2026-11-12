@@ -107,6 +107,15 @@ function toast(text, { ok = false, actions = [], timeout = 7000 } = {}) {
 const showError = (e, extra = {}) => toast(e.message || String(e), { timeout: 12000, ...extra });
 
 // ---------- Навигация ----------
+function setMaxIcon(maximized) {
+  const btn = $('#maxBtn');
+  btn.title = maximized ? 'Вернуть размер' : 'Развернуть';
+  btn.setAttribute('aria-label', btn.title);
+  $('#maxIcon').innerHTML = maximized
+    ? '<rect x="3.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="3.5" width="7" height="7" fill="var(--header)" stroke="currentColor" stroke-width="1.3"/>'
+    : '<rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.4"/>';
+}
+
 function go(page) {
   if (page === 'news') markNewsSeen();
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
@@ -555,7 +564,7 @@ function setProgress(text, frac = null, detail = '', indeterminate = false) {
 function idleProgress() {
   const p = state.pack;
   if (!p) setProgress('Нет связи с сайтом сборки');
-  else if (p.offline) setProgress('Офлайн: используется сохранённая сборка', null, p.version);
+  else if (p.offline) setProgress('Сайт сборки не отвечает — используется сохранённая сборка', null, p.version);
   else if (!p.installed) setProgress(`Сборка ${p.version} ещё не установлена`, null, fmtSize(p.totalSize));
   else if (!p.upToDate) setProgress(`Доступно обновление сборки: ${p.version}`, null, `сейчас ${p.installed}`);
   else setProgress('Готово к запуску', 1, `сборка ${p.version}`);
@@ -782,6 +791,10 @@ async function refreshPack() {
   renderPack();
   renderPlay();
   if (!state.busy && !state.running) idleProgress();
+  if ((!state.pack || state.pack.offline) && !state.offlineHintShown) {
+    state.offlineHintShown = true;
+    toast('Сайт bba.dimon20k.ru не отвечает, поэтому сборка не обновляется и вход может не работать. Если включён VPN — добавьте dimon20k.ru в исключения VPN или выключите его.', { timeout: 15000 });
+  } else if (state.pack && !state.pack.offline) state.offlineHintShown = false;
   refreshContent();
   refreshServers().then(pingServers);
 }
@@ -800,6 +813,13 @@ function bind() {
   $$('[data-page]').forEach((b) => b.addEventListener('click', () => go(b.dataset.page)));
   $$('[data-folder]').forEach((b) => b.addEventListener('click', () => bba.openFolder(b.dataset.folder).catch(showError)));
   $('#minBtn').addEventListener('click', () => bba.win.minimize());
+  $('#maxBtn').addEventListener('click', () => bba.win.maximize().then(setMaxIcon));
+  // двойной щелчок по шапке — развернуть/вернуть, как у обычных окон
+  $('.topbar').addEventListener('dblclick', (e) => {
+    if (!e.target.closest('button, a')) bba.win.maximize().then(setMaxIcon);
+  });
+  bba.on('win-state', (w) => setMaxIcon(w.maximized));
+  bba.win.isMaximized().then(setMaxIcon).catch(() => {});
   $('#closeBtn').addEventListener('click', () => bba.win.close());
   $('#themeBtn').addEventListener('click', async () => {
     await saveSetting({ theme: state.settings.theme === 'light' ? 'dark' : 'light' });
