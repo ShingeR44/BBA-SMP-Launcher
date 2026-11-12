@@ -69,8 +69,8 @@ async function loadFromMirror(mirror, signal) {
  * Получает pack.json: сайт -> зеркало на GitHub -> последний сохранённый.
  * mirror: { github: 'owner/repo', tag: 'modpack' }
  */
-async function loadPack(url, root, { signal, mirror } = {}) {
-  const cache = path.join(root, 'pack.json');
+async function loadPack(url, root, { signal, mirror, cacheName = 'pack.json' } = {}) {
+  const cache = path.join(root, cacheName);
   const save = async (pack) => {
     await fsp.mkdir(root, { recursive: true });
     await fsp.writeFile(cache, JSON.stringify(pack, null, 2));
@@ -133,7 +133,8 @@ async function walk(dir, base = dir, out = []) {
  * - в managedDirs удаляет файлы, которых нет в сборке. В mods/shaderpacks/resourcepacks, если админ
  *   разрешил свои файлы (userContent), удаляются только убранные из сборки файлы, а файлы игрока остаются.
  */
-async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onStage } = {}) {
+async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onStage, protect } = {}) {
+  const isProtected = (rel) => (typeof protect === 'function' ? protect(rel) : false);
   const state = await readState(root);
   const newState = { version: pack.version, files: {} };
   const base = pack._baseUrl || '';
@@ -179,7 +180,8 @@ async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onSta
     if (uc[clean] !== false && ['mods', 'shaderpacks', 'resourcepacks'].includes(clean)) {
       // игрокам можно класть сюда свои файлы: удаляем только то, что раньше было в сборке и из неё убрано
       for (const old of Object.keys(state.files || {})) {
-        if (old.toLowerCase().startsWith(`${clean.toLowerCase()}/`) && !wanted.has(old.toLowerCase())) {
+        // файлы, которые игрок ставил сам, не трогаем, даже если раньше такой же файл был в сборке
+        if (old.toLowerCase().startsWith(`${clean.toLowerCase()}/`) && !wanted.has(old.toLowerCase()) && !isProtected(old)) {
           await fsp.rm(path.join(gameDir, ...old.split('/')), { force: true });
           removed.push(old);
         }
@@ -203,4 +205,52 @@ async function installedVersion(root) {
   return (await readState(root)).version || null;
 }
 
-module.exports = { loadPack, syncPack, installedVersion, mirrorName };
+// ---------- Несколько сборок ----------
+/** packs.json: { packs: [{ id, name, version, url, required }] }. Без сети — последний сохранённый. */
+async function loadIndex(url, root, { signal } = {}) {
+  const cache = path.join(root, 'packs-index.json');
+  if (!url) return null;
+  try {
+    const j = await dl.fetchJson(url, { signal, noCache: true, timeoutMs: 8000 });
+    if (!j || !Array.isArray(j.packs)) throw new Error('packs.json без списка сборок');
+    const packs = j.packs
+      .filter((p) => p && p.url)
+      .map((p) => ({ id: String(p.id || p.url), name: p.name || null, version: p.version || null, required: p.required !== false, url: new URL(p.url, url).href }));
+    await fsp.mkdir(root, { recursive: true });
+    await fsp.writeFile(cache, JSON.stringify(packs, null, 2));
+    return packs;
+  } catch (e) {
+    if (e.code === 'ABORTED') throw e;
+    try {
+      return JSON.parse(await fsp.readFile(cache, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Plus = основная сборка + дополнительная. Файлы основной важнее (при совпадении пути).
+ * Адреса файлов делаем абсолютными, чтобы у каждой сборки была своя база.
+ */
+function combinePacks(main, extra) {
+  const abs = (f, base) => ({ ...f, url: /^https?:\/\//.test(f.url) ? f.url : new URL(f.url, base || undefined).href });
+  const files = main.files.map((f) => ({ ...abs(f, main._baseUrl), from: 'main' }));
+  const seen = new Set(files.map((f) => f.path.toLowerCase()));
+  for (const f of extra.files) {
+    if (seen.has(f.path.toLowerCase())) continue;
+    seen.add(f.path.toLowerCase());
+    files.push({ ...abs(f, extra._baseUrl), from: 'extra' });
+  }
+  return {
+    ...main,
+    files,
+    version: `${main.version}+${extra.version}`,
+    _baseUrl: null,
+    _offline: !!(main._offline || extra._offline),
+    _mirror: !!(main._mirror || extra._mirror),
+    _extra: { name: extra.name || null, version: extra.version || null, files: extra.files.length },
+  };
+}
+
+module.exports = { loadPack, syncPack, installedVersion, mirrorName, loadIndex, combinePacks };

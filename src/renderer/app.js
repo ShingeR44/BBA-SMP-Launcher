@@ -141,7 +141,7 @@ function renderHome() {
     stat('Версия', p ? `Java ${p.minecraft}` : '—'),
     stat('Загрузчик', p ? loaderLabel(p) : '—'),
     stat('Модов', p ? String(p.mods.length) : '—'),
-    stat('Сборка', p ? p.version : '—', p && !p.upToDate ? 'warn' : ''),
+    stat('Сборка', p ? p.variantName : '—', p && !p.upToDate ? 'warn' : ''),
     stat('Онлайн', s && s.online ? `${s.players.online} / ${s.players.max}` : 'нет связи', s && s.online ? 'ok' : '')
   );
   const srv = p && p.server;
@@ -150,7 +150,64 @@ function renderHome() {
   if (state.info) $('#heroTitle').textContent = state.info.serverName || 'BBA SMP';
 }
 
+// ---------- Выбор сборки (Standard / Plus) ----------
+const modsWord = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'мод' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'мода' : 'модов');
+
+function renderVariant() {
+  const p = state.pack;
+  const v = p && p.variants ? p.variants.find((x) => x.selected) : null;
+  $('#variantName').textContent = v ? v.name : 'BBA Standard';
+  $('#variantMeta').textContent = v && v.available ? `${v.mods} ${modsWord(v.mods)} · ${fmtSize(v.size)}` : '—';
+  $('#variantBtn').disabled = !p || state.busy || state.running;
+  if (!$('#variantMenu').hidden) renderVariantMenu();
+}
+
+function renderVariantMenu() {
+  const p = state.pack;
+  const menu = $('#variantMenu');
+  menu.replaceChildren(
+    el('div', { class: 'menu-title' }, 'Сборка'),
+    ...((p && p.variants) || []).map((v) => {
+      const meta = v.available ? `${v.mods} ${modsWord(v.mods)} · ${fmtSize(v.size)}${v.packName ? ' · ' + v.packName : ''}` : v.problem || 'Недоступна';
+      const item = el(
+        'button',
+        { class: `variant-item${v.selected ? ' selected' : ''}`, role: 'menuitemradio', 'aria-checked': String(!!v.selected), disabled: v.available ? null : 'disabled' },
+        el('span', { class: 'radio' }),
+        el('span', { class: 'meta' }, el('b', {}, v.name), el('span', {}, v.description), el('span', { class: v.available ? 'small-meta' : 'small-meta warn' }, meta))
+      );
+      item.addEventListener('click', () => chooseVariant(v));
+      return item;
+    })
+  );
+}
+
+function toggleVariantMenu() {
+  const menu = $('#variantMenu');
+  if (menu.hidden) {
+    renderVariantMenu();
+    menu.hidden = false;
+  } else menu.hidden = true;
+}
+
+async function chooseVariant(v) {
+  $('#variantMenu').hidden = true;
+  if (v.selected || !v.available) return;
+  try {
+    state.pack = await bba.pack.setVariant(v.id);
+    renderHome();
+    renderPack();
+    renderPlay();
+    renderVariant();
+    if (!state.busy && !state.running) idleProgress();
+    refreshContent();
+    toast(`Выбрана ${v.name}. ${state.pack.upToDate ? '' : 'Нажмите «Обновить», чтобы скачать моды.'}`, { ok: true, timeout: 4500 });
+  } catch (e) {
+    showError(e);
+  }
+}
+
 function renderPack() {
+  renderVariant();
   const p = state.pack;
   $('#packStats').replaceChildren(
     stat('Minecraft', p ? p.minecraft : '—'),
@@ -200,10 +257,17 @@ function renderContent() {
     if (!p) return list.replaceChildren(el('div', { class: 'empty' }, 'Не удалось получить сборку. Проверьте интернет.'));
     const mods = [...p.mods].sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file));
     note.hidden = false;
-    note.textContent = 'Эти моды нужны для игры на сервере. Лаунчер сам ставит и обновляет их, а если удалить или подменить файл вручную — вернёт при следующем запуске.';
+    note.textContent = `${p.variantName}: моды ставятся и обновляются сами, убрать их нельзя — если удалить или подменить файл вручную, лаунчер вернёт его при запуске.${p.variant === 'plus' ? ' Моды с меткой Plus — дополнительные: графика, анимации, звуки.' : ''} Сборку можно сменить рядом с кнопкой «Играть».`;
     return list.replaceChildren(
       ...(mods.length
-        ? mods.map((m) => el('div', { class: 'mod', title: m.file }, el('span', { class: 'name' }, el('span', { class: 'lock', title: 'Мод сборки' }, '🔒'), m.name || prettyMod(m.file)), el('span', { class: 'size' }, m.size ? fmtSize(m.size) : '')))
+        ? mods.map((m) =>
+            el(
+              'div',
+              { class: 'mod', title: m.file },
+              el('span', { class: 'name' }, el('span', { class: 'lock', title: 'Мод сборки' }, '🔒'), m.name || prettyMod(m.file), m.extra ? el('span', { class: 'plus-tag', title: 'Только в BBA Plus' }, 'Plus') : null),
+              el('span', { class: 'size' }, m.size ? fmtSize(m.size) : '')
+            )
+          )
         : [el('div', { class: 'empty' }, 'В сборке пока нет модов.')])
     );
   }
@@ -533,6 +597,7 @@ function renderStatus() {
 }
 
 function renderPlay() {
+  if (typeof renderVariant === 'function') renderVariant();
   const btn = $('#playBtn');
   btn.classList.remove('secondary');
   btn.disabled = false;
@@ -829,6 +894,13 @@ function bind() {
     applyTheme();
   });
   $('#playBtn').addEventListener('click', () => play());
+  $('#variantBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleVariantMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!$('#variantMenu').hidden && !e.target.closest('.variant-box')) $('#variantMenu').hidden = true;
+  });
   $('#repairBtn').addEventListener('click', () => play({ repair: true }));
   $$('#contentTabs .segment').forEach((b) =>
     b.addEventListener('click', () => {
@@ -888,6 +960,7 @@ function bind() {
       setProgress(g.visible ? 'Игра запущена — удачи на сервере!' : 'Игра загружается…', g.visible ? 1 : null, '', !g.visible);
       if (g.removed && g.removed.length) toast(`Убраны моды, которых больше нет в сборке: ${g.removed.length}`, { ok: true });
       if (g.disabled && g.disabled.length) toast(`Выключены свои моды, мешающие сборке:\n${g.disabled.map((d) => `• ${d.name} — ${d.reason}`).join('\n')}`, { timeout: 15000 });
+      if (g.reenabled && g.reenabled.length) toast(`Снова включены ваши моды (конфликта со сборкой больше нет): ${g.reenabled.map((d) => d.name).join(', ')}`, { ok: true, timeout: 8000 });
     } else {
       if (g.error) {
         setProgress('Игра завершилась с ошибкой');

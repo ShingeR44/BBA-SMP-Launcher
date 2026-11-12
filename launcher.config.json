@@ -43,6 +43,18 @@
   ],
   "packMirror": {
     "github": "ShingeR44/BBA-SMP-Launcher",
-    "tag": "modpack"
+    "tag": "modpack",
+    "plusTag": "modpack-plus"
+  },
+  "packsIndex": "https://bba.dimon20k.ru/launcher/packs.json",
+  "variants": {
+    "standard": {
+      "name": "BBA Standard",
+      "description": "Только моды, нужные для игры на сервере"
+    },
+    "plus": {
+      "name": "BBA Plus",
+      "description": "Всё из Standard + графика, анимации, звуки и атмосфера"
+    }
   }
 }

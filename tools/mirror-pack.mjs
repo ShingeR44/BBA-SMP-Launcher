@@ -7,6 +7,8 @@
 //   node tools/mirror-pack.mjs --from-launcher        pack.json и файлы из %APPDATA%\.bba-smp (то, что скачал лаунчер)
 //   node tools/mirror-pack.mjs --from-site            скачать pack.json и файлы с сайта (packUrl из launcher.config.json)
 //
+// Добавьте --plus, чтобы выложить клиентскую сборку (BBA Plus) в отдельный релиз «modpack-plus».
+//
 // Нужен GitHub CLI (gh), вошедший в аккаунт с правом записи в репозиторий.
 // Моды, которые есть на Modrinth (ищутся по sha1), в зеркало не перезаливаются — в pack.json пишется
 // официальная ссылка cdn.modrinth.com. Остальные файлы загружаются в релиз как <sha1>.<расширение>
@@ -21,7 +23,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'launcher.config.json'), 'utf8'));
 const mirror = config.packMirror || {};
 const REPO = mirror.github;
-const TAG = mirror.tag || 'modpack';
+const PLUS = process.argv.includes('--plus');
+const TAG = PLUS ? mirror.plusTag || 'modpack-plus' : mirror.tag || 'modpack';
 if (!REPO) {
   console.error('В launcher.config.json нет packMirror.github');
   process.exit(1);
@@ -40,16 +43,25 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bba-mirror-'));
 
 if (args.includes('--from-launcher')) {
   const dir = path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), config.dataFolder || '.bba-smp');
-  pack = JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf8'));
+  pack = JSON.parse(fs.readFileSync(path.join(dir, PLUS ? 'pack-plus.json' : 'pack.json'), 'utf8'));
   fileOf = (f) => path.join(dir, 'game', ...f.path.split('/'));
 } else if (args.includes('--from-site')) {
-  const res = await fetch(config.packUrl, { headers: { 'Cache-Control': 'no-cache' } });
+  let packUrl = config.packUrl;
+  if (PLUS) {
+    // адрес клиентской сборки — из packs.json (необязательная сборка)
+    const indexUrl = config.packsIndex || new URL('packs.json', config.packUrl).href;
+    const idx = await (await fetch(indexUrl, { headers: { 'Cache-Control': 'no-cache' } })).json();
+    const entry = (idx.packs || []).find((p) => p.required === false);
+    if (!entry) throw new Error('В packs.json нет клиентской сборки');
+    packUrl = new URL(entry.url, indexUrl).href;
+  }
+  const res = await fetch(packUrl, { headers: { 'Cache-Control': 'no-cache' } });
   if (!res.ok) throw new Error(`pack.json с сайта: HTTP ${res.status}`);
   pack = await res.json();
   for (const f of pack.files) {
     const dest = path.join(tmp, 'src', ...f.path.split('/'));
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    const r = await fetch(new URL(f.url, config.packUrl));
+    const r = await fetch(new URL(f.url, packUrl));
     if (!r.ok) throw new Error(`${f.path}: HTTP ${r.status}`);
     fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer()));
   }
@@ -98,7 +110,7 @@ let assets = [];
 try {
   assets = JSON.parse(gh('release', 'view', TAG, '-R', REPO, '--json', 'assets')).assets.map((a) => a.name);
 } catch {
-  gh('release', 'create', TAG, '-R', REPO, '--prerelease', '--target', 'main', '--title', 'Зеркало сборки BBA SMP',
+  gh('release', 'create', TAG, '-R', REPO, '--prerelease', '--target', 'main', '--title', PLUS ? 'Зеркало клиентской сборки (BBA Plus)' : 'Зеркало сборки BBA SMP',
     '--notes', 'Служебный релиз: копия сборки модов для лаунчера. Лаунчер берёт её отсюда, если сайт не отвечает. Скачивать вручную не нужно.');
   console.log(`Создан релиз ${TAG}.`);
 }

@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS = {
   serverAddress: null, // выбранный адрес сервера (host:port)
   windowBounds: null, // размер и положение окна
   windowMaximized: false,
+  packVariant: 'standard', // standard | plus
 };
 
 class Store {

@@ -33,11 +33,83 @@ let updater = null;
 // pack.json без сети: берём сохранённый, чтобы вкладка «Сборка» работала офлайн
 function cachedPack() {
   if (lastPack) return lastPack;
+  const read = (n) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(ROOT, n), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const main = read('pack.json');
+  const extra = read('pack-plus.json');
+  if (main && extra && currentVariant() === 'plus') return modpack.combinePacks(main, extra);
+  return main;
+}
+
+// ---------- Две сборки: Standard (основная) и Plus (основная + клиентская) ----------
+let lastMain = null;
+let lastExtra = null;
+let extraProblem = null;
+const VARIANTS = {
+  standard: { name: 'BBA Standard', description: 'Только моды, нужные для игры на сервере', ...((config.variants || {}).standard || {}) },
+  plus: { name: 'BBA Plus', description: 'Всё из Standard + графика, анимации, звуки и атмосфера', ...((config.variants || {}).plus || {}) },
+};
+const currentVariant = () => (store.settings.packVariant === 'plus' ? 'plus' : 'standard');
+const packsIndexUrl = () => config.packsIndex || new URL('packs.json', config.packUrl).href;
+
+function effectivePack() {
+  if (!lastMain) return null;
+  return currentVariant() === 'plus' && lastExtra ? modpack.combinePacks(lastMain, lastExtra) : lastMain;
+}
+
+/** Все пути, которые числятся в какой-либо сборке или ставились последней синхронизацией. */
+function isKnownPackFile(rel) {
+  const r = rel.toLowerCase();
+  const inPack = (p) => p && p.files.some((f) => f.path.toLowerCase() === r);
+  if (inPack(lastMain) || inPack(lastExtra)) return true;
   try {
-    return JSON.parse(fs.readFileSync(path.join(ROOT, 'pack.json'), 'utf8'));
+    const st = JSON.parse(fs.readFileSync(path.join(ROOT, 'pack-state.json'), 'utf8'));
+    return Object.keys(st.files || {}).some((k) => k.toLowerCase() === r);
   } catch {
-    return null;
+    return false;
   }
+}
+
+async function loadAllPacks({ signal } = {}) {
+  const index = await modpack.loadIndex(packsIndexUrl(), ROOT, { signal });
+  const mainEntry = index && index.find((p) => p.required);
+  const extraEntry = index && index.find((p) => !p.required);
+  const main = await modpack.loadPack(mainEntry ? mainEntry.url : config.packUrl, ROOT, { signal, mirror: config.packMirror, cacheName: 'pack.json' });
+  if (mainEntry && mainEntry.name && !main.name) main.name = mainEntry.name;
+  let extra = null;
+  extraProblem = null;
+  if (extraEntry) {
+    const mirror = config.packMirror ? { ...config.packMirror, tag: config.packMirror.plusTag || 'modpack-plus' } : null;
+    extra = await modpack.loadPack(extraEntry.url, ROOT, { signal, mirror, cacheName: 'pack-plus.json' }).catch((e) => {
+      extraProblem = `Клиентская сборка не загрузилась: ${e.message}`;
+      return null;
+    });
+    if (extra && extraEntry.name && !extra.name) extra.name = extraEntry.name;
+    if (extra && (extra.minecraft !== main.minecraft || ((extra.loader || {}).type || 'vanilla') !== ((main.loader || {}).type || 'vanilla'))) {
+      extraProblem = `Клиентская сборка сделана для ${extra.minecraft} ${(extra.loader || {}).type || ''}, а основная — для ${main.minecraft} ${(main.loader || {}).type || ''}`;
+      extra = null;
+    }
+  } else {
+    extraProblem = 'Клиентская сборка ещё не выложена';
+  }
+  lastMain = main;
+  lastExtra = extra;
+  lastPack = effectivePack();
+  return lastPack;
+}
+
+function variantsInfo() {
+  const stats = (p) => p && { packName: p.name || null, version: p.version, mods: p.files.filter((f) => f.path.startsWith('mods/')).length, size: p.files.reduce((a, f) => a + (f.size || 0), 0) };
+  const plus = lastMain && lastExtra ? modpack.combinePacks(lastMain, lastExtra) : null;
+  return [
+    { id: 'standard', ...VARIANTS.standard, available: !!lastMain, ...stats(lastMain) },
+    { id: 'plus', ...VARIANTS.plus, available: !!plus, problem: plus ? null : extraProblem, ...stats(plus), extra: plus ? plus._extra : null },
+  ].map((v) => ({ ...v, selected: v.id === currentVariant() }));
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -160,7 +232,7 @@ function packSummary(pack, installed) {
   if (!pack) return null;
   const mods = pack.files
     .filter((f) => f.path.startsWith('mods/') && f.path.endsWith('.jar'))
-    .map((f) => ({ file: f.path.slice(5), size: f.size || 0, name: f.name || null }));
+    .map((f) => ({ file: f.path.slice(5), size: f.size || 0, name: f.name || null, extra: f.from === 'extra' }));
   return {
     name: pack.name || config.serverName,
     version: pack.version || '—',
@@ -175,6 +247,9 @@ function packSummary(pack, installed) {
     mirror: !!pack._mirror,
     offlineError: pack._error || null,
     recommendedMemory: recommendedMemory(pack),
+    variant: currentVariant(),
+    variantName: VARIANTS[currentVariant()].name,
+    variants: variantsInfo(),
   };
 }
 
@@ -215,8 +290,8 @@ async function play({ repair = false } = {}) {
 
     // 2. Сборка
     setStage('pack', 'Получаем информацию о сборке…');
-    const pack = await modpack.loadPack(config.packUrl, ROOT, { signal, mirror: config.packMirror });
-    lastPack = pack;
+    const pack = await loadAllPacks({ signal });
+    if (currentVariant() === 'plus' && !lastExtra) throw new Error(`BBA Plus сейчас недоступна: ${extraProblem || 'нет клиентской сборки'}. Выберите BBA Standard.`);
 
     // 3. Minecraft
     setStage('minecraft', `Готовим Minecraft ${pack.minecraft}…`);
@@ -255,13 +330,14 @@ async function play({ repair = false } = {}) {
     setStage('modpack', 'Синхронизируем сборку…');
     fs.mkdirSync(GAME_DIR, { recursive: true });
     const sync = await modpack.syncPack(pack, ROOT, GAME_DIR, {
+      protect: (rel) => content.isUserFile(rel),
       repair,
       signal,
       onStage: (t) => progress(t),
       onProgress: bytesProgress('Загружаем моды…'),
     });
     // свои моды игрока, которые дублируют моды сборки или сделаны под другой загрузчик, выключаем
-    const disabled = await content.enforce();
+    const { disabled, enabled: reenabled } = await content.enforce();
 
     // 8. Запуск
     setStage('launch', 'Запускаем игру…');
@@ -295,7 +371,7 @@ async function play({ repair = false } = {}) {
         }
       },
     });
-    send('game-state', { running: true, visible: false, removed: sync.removed, disabled });
+    send('game-state', { running: true, visible: false, removed: sync.removed, disabled, reenabled });
     gameProcess.on('error', (e) => {
       send('game-state', { running: false, error: `Не удалось запустить Java: ${e.message}` });
       gameProcess = null;
@@ -392,9 +468,15 @@ function registerIpc() {
   });
 
   handle('pack:info', async () => {
-    const pack = await modpack.loadPack(config.packUrl, ROOT, { mirror: config.packMirror }).catch(() => lastPack);
-    if (pack) lastPack = pack;
+    const pack = await loadAllPacks().catch(() => lastPack);
     return packSummary(pack, await modpack.installedVersion(ROOT));
+  });
+  handle('pack:setVariant', async (id) => {
+    if (!VARIANTS[id]) throw new Error('Нет такой сборки');
+    if (id === 'plus' && !lastExtra) throw new Error(`BBA Plus сейчас недоступна: ${extraProblem || 'нет клиентской сборки'}`);
+    store.setSettings({ packVariant: id });
+    lastPack = effectivePack();
+    return packSummary(lastPack, await modpack.installedVersion(ROOT));
   });
 
   handle('news:list', () => news.fetchNews(config.newsUrl, ROOT));
@@ -465,7 +547,7 @@ function registerIpc() {
 
 app.whenReady().then(async () => {
   store = await new Store().init();
-  content = new Content({ gameDir: GAME_DIR, getPack: cachedPack, trash: (p) => shell.trashItem(p) });
+  content = new Content({ gameDir: GAME_DIR, getPack: cachedPack, trash: (p) => shell.trashItem(p), isKnownPackFile });
   updater = new Updater({
     repo: config.update && config.update.github,
     allowPrerelease: !!(config.update && config.update.allowPrerelease),

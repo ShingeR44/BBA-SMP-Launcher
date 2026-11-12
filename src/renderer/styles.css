@@ -394,3 +394,27 @@ code { font-family: Consolas, 'Cascadia Mono', monospace; }
 .server-row .ping { font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .server-row .ping.ok { color: var(--ok); }
 .server-row .ping.off { color: var(--accent); }
+
+/* ---------- Выбор сборки ---------- */
+.variant-box { position: relative; }
+.variant-btn { height: 56px; min-width: 200px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 16px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; }
+.variant-btn:hover:not(:disabled) { border-color: var(--accent); }
+.variant-btn:disabled { opacity: 0.6; cursor: default; }
+.variant-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.variant-text b { font-size: 16px; font-weight: 800; white-space: nowrap; }
+.variant-text span { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.variant-caret { color: var(--muted); flex: none; }
+.variant-menu { position: absolute; right: 0; bottom: calc(100% + 12px); width: 360px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4); z-index: 20; animation: fade 0.15s ease; }
+.variant-item { display: flex; gap: 12px; width: 100%; padding: 14px 16px; border: 0; border-top: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.variant-item:hover:not(:disabled) { background: var(--surface-2); }
+.variant-item:disabled { cursor: default; }
+.variant-item:disabled .meta b, .variant-item:disabled .meta span:not(.warn) { opacity: 0.55; }
+.variant-item .radio { flex: none; margin-top: 3px; width: 16px; height: 16px; border: 2px solid var(--muted); border-radius: 50%; display: grid; place-items: center; }
+.variant-item.selected .radio { border-color: var(--accent); }
+.variant-item.selected .radio::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.variant-item .meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.variant-item .meta b { font-size: 16px; }
+.variant-item .meta span { font-size: 13px; color: var(--muted); font-weight: 500; line-height: 1.35; }
+.variant-item .meta .small-meta { font-size: 12px; font-weight: 700; }
+.variant-item .meta .small-meta.warn { color: var(--accent); }
+.plus-tag { margin-left: 8px; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #fff; background: var(--accent); padding: 2px 5px; vertical-align: middle; }

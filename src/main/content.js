@@ -97,10 +97,40 @@ const prettyName = (file) =>
 
 // ---------- Менеджер ----------
 class Content {
-  constructor({ gameDir, getPack, trash }) {
+  constructor({ gameDir, getPack, trash, isKnownPackFile }) {
     this.gameDir = gameDir;
-    this.getPack = getPack; // () => pack | null
+    this.getPack = getPack; // () => pack | null (выбранная сборка)
+    // файл какой-либо сборки (в т. ч. не выбранной сейчас) — такие не считаем файлами игрока
+    this.isKnownPackFile = isKnownPackFile || (() => false);
     this.trash = trash || ((p) => fsp.rm(p, { force: true }));
+    // какие файлы игрок поставил сам: их лаунчер никогда не удаляет при обновлении сборки
+    this.registryFile = path.join(path.dirname(gameDir), 'user-content.json');
+    try {
+      this.registry = JSON.parse(fs.readFileSync(this.registryFile, 'utf8'));
+    } catch {
+      this.registry = {};
+    }
+  }
+
+  #reg(kind) {
+    this.registry[kind] = this.registry[kind] || {};
+    return this.registry[kind];
+  }
+
+  #saveRegistry() {
+    try {
+      fs.writeFileSync(this.registryFile, JSON.stringify(this.registry, null, 2));
+    } catch {
+      /* не критично */
+    }
+  }
+
+  /** Файл игрока? rel — путь от папки игры, например «mods/sodium.jar» */
+  isUserFile(rel) {
+    const [dir, ...rest] = String(rel).split('/');
+    const kind = Object.keys(KINDS).find((k) => KINDS[k].dir === dir);
+    if (!kind || rest.length !== 1) return false;
+    return !!this.#reg(kind)[rest[0].replace(/\.disabled$/i, '').toLowerCase()];
   }
 
   dir(kind) {
@@ -154,7 +184,7 @@ class Content {
     }
     const pack = [...packMap.values()].map((f) => {
       const file = path.posix.basename(f.path);
-      return { file, name: f.name || prettyName(file), size: f.size || 0, locked: true, present: names.some((n) => n.toLowerCase() === file.toLowerCase()) };
+      return { file, name: f.name || prettyName(file), size: f.size || 0, locked: true, extra: f.from === 'extra', present: names.some((n) => n.toLowerCase() === file.toLowerCase()) };
     });
 
     const packIds = kind === 'mods' ? this.packModIds() : new Map();
@@ -166,8 +196,16 @@ class Content {
       if (!enabled && !lower.endsWith(ext + OFF)) continue;
       const base = enabled ? n : n.slice(0, -OFF.length);
       if (packMap.has(base.toLowerCase())) continue; // это файл сборки (или его выключенная копия)
+      const reg0 = this.#reg(kind);
+      // остался от другой сборки (например, после перехода с Plus на Standard) — уберётся при синхронизации
+      if (!reg0[base.toLowerCase()] && this.isKnownPackFile(`${KINDS[kind].dir}/${base}`)) continue;
       const full = path.join(dir, n);
       const st = await fsp.stat(full).catch(() => null);
+      const reg = this.#reg(kind);
+      if (!reg[base.toLowerCase()]) {
+        reg[base.toLowerCase()] = { file: base, added: Date.now() };
+        this.#saveRegistry();
+      }
       const item = { file: base, name: prettyName(base), size: st ? st.size : 0, enabled, locked: false };
       if (kind === 'mods') {
         const meta = readModMeta(full);
@@ -238,6 +276,8 @@ class Content {
       await fsp.mkdir(dir, { recursive: true });
       await fsp.rm(path.join(dir, file + OFF), { force: true });
       await fsp.copyFile(src, path.join(dir, file));
+      this.#reg(kind)[file.toLowerCase()] = { file, added: Date.now() };
+      this.#saveRegistry();
       added.push({ file, kind });
     }
     return { added, rejected };
@@ -249,10 +289,14 @@ class Content {
     return path.join(this.dir(kind), file);
   }
 
-  async toggle(kind, file, enabled) {
+  async toggle(kind, file, enabled, { auto = false } = {}) {
     const p = this.#userPath(kind, file);
     const [from, to] = enabled ? [p + OFF, p] : [p, p + OFF];
     await fsp.rename(from, to);
+    const rec = this.#reg(kind)[file.toLowerCase()] || { file };
+    rec.autoDisabled = auto && !enabled;
+    this.#reg(kind)[file.toLowerCase()] = rec;
+    this.#saveRegistry();
   }
 
   async remove(kind, file) {
@@ -260,20 +304,29 @@ class Content {
     for (const candidate of [p, p + OFF]) {
       if (fs.existsSync(candidate)) await this.trash(candidate);
     }
+    delete this.#reg(kind)[file.toLowerCase()];
+    this.#saveRegistry();
   }
 
   /** Перед запуском: выключает свои моды, которые конфликтуют со сборкой. */
   async enforce() {
-    if (!this.allowed('mods')) return [];
+    if (!this.allowed('mods')) return { disabled: [], enabled: [] };
     const { user } = await this.list('mods');
     const disabled = [];
+    const enabled = [];
+    const reg = this.#reg('mods');
     for (const m of user) {
+      const rec = reg[m.file.toLowerCase()] || {};
       if (m.enabled && m.problem) {
-        await this.toggle('mods', m.file, false).catch(() => {});
+        await this.toggle('mods', m.file, false, { auto: true }).catch(() => {});
         disabled.push({ file: m.file, name: m.name, reason: m.problem });
+      } else if (!m.enabled && !m.problem && rec.autoDisabled) {
+        // лаунчер выключал мод из-за сборки, а теперь конфликта нет — возвращаем как было
+        await this.toggle('mods', m.file, true).catch(() => {});
+        enabled.push({ file: m.file, name: m.name });
       }
     }
-    return disabled;
+    return { disabled, enabled };
   }
 }
 

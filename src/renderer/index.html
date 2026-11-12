@@ -192,6 +192,13 @@
           <div class="progress-text"><span id="progressText">Готово к запуску</span><span class="muted" id="progressDetail"></span></div>
           <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
         </div>
+        <div class="variant-box">
+          <button class="variant-btn" id="variantBtn" aria-haspopup="menu" title="Выбрать сборку">
+            <span class="variant-text"><b id="variantName">BBA Standard</b><span id="variantMeta">—</span></span>
+            <svg class="variant-caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2 8l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          </button>
+          <div class="variant-menu" id="variantMenu" role="menu" hidden></div>
+        </div>
         <button class="play-btn" id="playBtn">Играть</button>
       </footer>
     </div>

@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('bba', {
     select: (id) => call('accounts:select', id),
     remove: (id) => call('accounts:remove', id),
   },
-  pack: { info: () => call('pack:info') },
+  pack: { info: () => call('pack:info'), setVariant: (id) => call('pack:setVariant', id) },
   news: { list: () => call('news:list') },
   content: {
     list: (kind) => call('content:list', kind),
