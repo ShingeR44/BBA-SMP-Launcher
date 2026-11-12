@@ -105,18 +105,27 @@ class Updater {
     clearTimeout(this.retryTimer);
     this.set({ status: 'checking', error: null });
     try {
-      const rel = await this.#latestRelease();
-      const version = rel && rel.tag_name.replace(/^v/, '');
-      if (!rel || cmpVersions(version, this.current) <= 0) {
+      // основной путь — API GitHub; если он отказал (лимит запросов, 5xx, нет связи) — прямые ссылки github.com
+      let info;
+      try {
+        info = await this.#fromApi();
+      } catch (apiErr) {
+        if (this.allowPrerelease) throw apiErr; // для pre-release прямой ссылки «latest» нет
+        try {
+          info = await this.#fromWeb();
+        } catch {
+          throw apiErr;
+        }
+      }
+      if (!info || cmpVersions(info.version, this.current) <= 0) {
         this.set({ status: 'latest', checkedAt: Date.now() });
         return this.state;
       }
       if (this.mode !== 'installer') {
-        const asset = (rel.assets || []).find((a) => (this.portable ? /portable/i : /setup/i).test(a.name) && a.name.endsWith('.exe'));
-        this.set({ status: 'available', version, url: (asset && asset.browser_download_url) || rel.html_url, page: rel.html_url });
+        this.set({ status: 'available', version: info.version, url: (this.portable ? info.portableUrl : info.setupUrl) || info.page, page: info.page });
         return this.state;
       }
-      await this.#download(rel, version);
+      await this.#fetchInstaller(info);
     } catch (e) {
       this.set({ status: 'error', error: friendly(e) });
       this.retryTimer = setTimeout(() => this.check().catch(() => {}), RETRY_AFTER);
@@ -124,31 +133,69 @@ class Updater {
     return this.state;
   }
 
-  async #download(rel, version) {
-    const yml = (rel.assets || []).find((a) => a.name === 'latest.yml');
+  /** Через API: версия, ссылки и (для установленной версии) данные установщика из latest.yml. */
+  async #fromApi() {
+    const rel = await this.#latestRelease();
+    if (!rel) return null;
+    const version = rel.tag_name.replace(/^v/, '');
+    const assets = rel.assets || [];
+    const exe = (re) => assets.find((x) => re.test(x.name) && x.name.endsWith('.exe'));
+    const info = {
+      version,
+      page: rel.html_url,
+      setupUrl: (exe(/setup/i) || {}).browser_download_url,
+      portableUrl: (exe(/portable/i) || {}).browser_download_url,
+    };
+    if (this.mode !== 'installer' || cmpVersions(version, this.current) <= 0) return info;
+    const yml = assets.find((x) => x.name === 'latest.yml');
     if (!yml) throw new Error('В релизе нет latest.yml — его нужно загрузить вместе с установщиком');
-    const info = parseLatestYml(await assetText(yml));
-    const asset = (rel.assets || []).find((a) => a.name === info.file) || (rel.assets || []).find((a) => /setup.*\.exe$/i.test(a.name));
-    if (!asset || !info.sha512) throw new Error('В релизе нет установщика или его контрольной суммы');
+    const y = parseLatestYml(await assetText(yml));
+    const asset = assets.find((x) => x.name === y.file) || exe(/setup/i);
+    if (!asset || !y.sha512) throw new Error('В релизе нет установщика или его контрольной суммы');
+    return { ...info, file: asset.name, sha512: y.sha512, size: y.size || asset.size, url: asset.url, headers: { Accept: 'application/octet-stream' } };
+  }
 
+  /** Запасной путь без API: github.com/<repo>/releases/latest/download/... (в лимит API не входит). */
+  async #fromWeb() {
+    const base = `https://github.com/${this.repo}/releases/latest/download`;
+    const res = await fetch(`${base}/latest.yml`, { headers: { 'User-Agent': dl.UA }, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`github.com: HTTP ${res.status}`);
+    const text = await res.text();
+    const version = (/^version:\s*['"]?([^'"\s]+)/m.exec(text) || [])[1];
+    const y = parseLatestYml(text);
+    if (!version || !y.file || !y.sha512) throw new Error('latest.yml без версии или контрольной суммы');
+    const page = `https://github.com/${this.repo}/releases/latest`;
+    return {
+      version,
+      page,
+      setupUrl: `${base}/${encodeURIComponent(y.file)}`,
+      portableUrl: page,
+      file: y.file,
+      sha512: y.sha512,
+      size: y.size,
+      url: `${base}/${encodeURIComponent(y.file)}`,
+      headers: {},
+    };
+  }
+
+  async #fetchInstaller(info) {
     fs.mkdirSync(this.dir, { recursive: true });
     // старые скачанные установщики больше не нужны
-    for (const f of fs.readdirSync(this.dir)) if (f !== asset.name) fs.rmSync(path.join(this.dir, f), { force: true });
-    const dest = path.join(this.dir, asset.name);
-
-    const size = info.size || asset.size;
+    for (const f of fs.readdirSync(this.dir)) if (f !== info.file) fs.rmSync(path.join(this.dir, f), { force: true });
+    const dest = path.join(this.dir, info.file);
+    const size = info.size;
     let bytes = 0;
     let last = 0;
-    this.set({ status: 'downloading', version, percent: 0 });
-    const cached = fs.existsSync(dest) && fs.statSync(dest).size === size;
+    this.set({ status: 'downloading', version: info.version, percent: 0 });
+    const cached = fs.existsSync(dest) && (!size || fs.statSync(dest).size === size);
     if (!cached || !(await this.#sha512ok(dest, info.sha512))) {
       await dl.downloadFile(
-        { url: asset.url, dest, size, sha512: info.sha512, headers: { Accept: 'application/octet-stream' } },
+        { url: info.url, dest, size, sha512: info.sha512, headers: info.headers },
         {
           onBytes: (n) => {
             bytes += n;
             const now = Date.now();
-            if (now - last > 400) {
+            if (size && now - last > 400) {
               last = now;
               this.set({ status: 'downloading', percent: Math.min(99, Math.round((bytes / size) * 100)) });
             }
@@ -157,7 +204,7 @@ class Updater {
       );
     }
     this.file = dest;
-    this.set({ status: 'ready', version, percent: 100 });
+    this.set({ status: 'ready', version: info.version, percent: 100 });
   }
 
   async #sha512ok(file, expected) {

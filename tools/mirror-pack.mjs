@@ -18,6 +18,8 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'launcher.config.json'), 'utf8'));
@@ -103,7 +105,47 @@ for (const f of pack.files) {
   else hosted.push(f);
 }
 console.log(`С Modrinth (ссылкой): ${pack.files.length - hosted.length}, в релиз GitHub: ${hosted.length}`);
-for (const f of hosted) console.log(`  в релиз: ${f.path} — проверьте, что лицензия разрешает распространение`);
+
+// ---------- лицензии файлов, которые кладём в релиз ----------
+// Кладём только моды с открытой лицензией, разрешающей распространение копий (MIT, Apache, GPL, CC и т. п.).
+// «All Rights Reserved» и моды без лицензии не загружаем — их нужно положить на Modrinth или убрать из зеркала.
+const { readZipEntries, readZipEntry } = require(path.join(ROOT, 'src/main/download.js'));
+const OPEN = /(MIT|Apache|BSD|ISC|MPL|LGPL|GPL|Unlicense|CC0|CC[- ]BY|Zlib|WTFPL|EUPL)/i;
+const meta = (file) => {
+  try {
+    const buf = fs.readFileSync(file);
+    const e = readZipEntries(buf).find((x) => x.name === 'fabric.mod.json' || x.name === 'quilt.mod.json');
+    if (!e) return {};
+    const j = JSON.parse(readZipEntry(buf, e).toString('utf8').replace(/[\u0000-\u001f]+/g, ' '));
+    const authors = (j.authors || []).map((a) => (typeof a === 'string' ? a : a.name)).filter(Boolean);
+    const contact = j.contact || {};
+    return { name: j.name || j.id, license: [].concat(j.license || []).join(', '), authors, source: contact.homepage || contact.sources || null };
+  } catch {
+    return {};
+  }
+};
+const credits = [];
+const refused = [];
+for (const f of hosted) {
+  const m = meta(fileOf(f));
+  const lic = m.license || '';
+  if (!OPEN.test(lic) || /all rights reserved|ARR|proprietary/i.test(lic)) refused.push(`${f.path} (лицензия: ${lic || 'не указана'})`);
+  else credits.push({ path: f.path, ...m });
+  console.log(`  в релиз: ${f.path} — ${lic || 'лицензия не указана'}`);
+}
+if (refused.length && !args.includes('--allow-unlicensed')) {
+  console.error(`\nНе загружаю моды без открытой лицензии:\n  ${refused.join('\n  ')}\nВыложите их на Modrinth, уберите из зеркала или запустите с --allow-unlicensed, если у вас есть разрешение автора.`);
+  process.exit(1);
+}
+const notes = [
+  PLUS ? 'Служебный релиз: копия клиентской сборки (BBA Plus) для лаунчера.' : 'Служебный релиз: копия сборки модов для лаунчера.',
+  'Лаунчер берёт её отсюда, если сайт не отвечает. Скачивать вручную не нужно.',
+  '',
+  'Моды с Modrinth здесь не хранятся — лаунчер скачивает их по официальным ссылкам cdn.modrinth.com.',
+  'Файлы ниже нет на Modrinth; они распространяются без изменений и некоммерчески, по их лицензиям:',
+  '',
+  ...credits.map((c) => `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; лицензия ${c.license}${c.source ? `; ${c.source}` : ''}`),
+].join('\n');
 
 // ---------- релиз-зеркало ----------
 let assets = [];
@@ -133,6 +175,9 @@ for (let i = 0; i < batch.length; i += 10) {
 const packFile = path.join(tmp, 'pack.json');
 fs.writeFileSync(packFile, JSON.stringify(pack, null, 2));
 gh('release', 'upload', TAG, '-R', REPO, packFile, '--clobber');
+const notesFile = path.join(tmp, 'notes.md');
+fs.writeFileSync(notesFile, notes);
+gh('release', 'edit', TAG, '-R', REPO, '--notes-file', notesFile);
 
 const extra = assets.filter((n) => n !== 'pack.json' && !wanted.has(n));
 for (const n of extra) gh('release', 'delete-asset', TAG, n, '-R', REPO, '-y');

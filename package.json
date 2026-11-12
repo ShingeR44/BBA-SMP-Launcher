@@ -1,7 +1,7 @@
 {
   "name": "bba-launcher",
   "productName": "BBA SMP Launcher",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Лаунчер сервера BBA SMP: модпак, вход, новости, подключение к серверу",
   "main": "src/main/main.js",
   "author": "BBA SMP",

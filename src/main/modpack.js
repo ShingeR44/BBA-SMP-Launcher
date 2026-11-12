@@ -42,6 +42,20 @@ async function ghJson(url, signal) {
 }
 
 async function loadFromMirror(mirror, signal) {
+  try {
+    return await loadFromMirrorApi(mirror, signal);
+  } catch (apiErr) {
+    if (signal && signal.aborted) throw apiErr;
+    // API отказал (лимит запросов, 5xx, нет связи) — прямые ссылки релиза, они в лимит API не входят
+    try {
+      return await loadFromMirrorWeb(mirror, signal);
+    } catch (webErr) {
+      throw new Error(`${apiErr.message}; прямые ссылки: ${webErr.message}`);
+    }
+  }
+}
+
+async function loadFromMirrorApi(mirror, signal) {
   const rel = await ghJson(`https://api.github.com/repos/${mirror.github}/releases/tags/${encodeURIComponent(mirror.tag || 'modpack')}`, signal);
   const assets = new Map((rel.assets || []).map((a) => [a.name, a]));
   const packAsset = assets.get('pack.json');
@@ -58,6 +72,25 @@ async function loadFromMirror(mirror, signal) {
     if (!a) throw new Error(`на зеркале нет файла ${f.path}`);
     f.url = a.url;
     f.headers = { Accept: 'application/octet-stream' };
+  }
+  pack._baseUrl = null;
+  pack._mirror = true;
+  pack._offline = false;
+  return pack;
+}
+
+async function loadFromMirrorWeb(mirror, signal) {
+  const base = `https://github.com/${mirror.github}/releases/download/${encodeURIComponent(mirror.tag || 'modpack')}`;
+  const res = await fetch(`${base}/pack.json`, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
+    headers: { 'User-Agent': dl.UA },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const pack = validate(JSON.parse(await res.text()));
+  for (const f of pack.files) {
+    if (/^https:\/\//.test(f.url)) continue;
+    f.url = `${base}/${mirrorName(f)}`;
+    delete f.headers;
   }
   pack._baseUrl = null;
   pack._mirror = true;
