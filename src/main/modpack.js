@@ -26,17 +26,72 @@ function validate(pack) {
 }
 
 /** Получает pack.json с сайта; без интернета берёт последний сохранённый. */
-async function loadPack(url, root, { signal } = {}) {
+// ---------- Зеркало на GitHub ----------
+// Релиз с постоянным тегом (по умолчанию «modpack»): pack.json, в котором моды с Modrinth указаны
+// официальными ссылками cdn.modrinth.com, а остальные файлы лежат в самом релизе под именем <sha1>.<расширение>
+// (GitHub портит имена с пробелами и скобками). Релиз и его файлы берутся через api.github.com.
+const mirrorName = (f) => `${f.sha1}${path.posix.extname(f.path).toLowerCase()}`;
+
+async function ghJson(url, signal) {
+  const res = await fetch(url, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+    headers: { 'User-Agent': dl.UA, Accept: 'application/vnd.github+json' },
+  });
+  if (!res.ok) throw new Error(`GitHub API: HTTP ${res.status}`);
+  return res.json();
+}
+
+async function loadFromMirror(mirror, signal) {
+  const rel = await ghJson(`https://api.github.com/repos/${mirror.github}/releases/tags/${encodeURIComponent(mirror.tag || 'modpack')}`, signal);
+  const assets = new Map((rel.assets || []).map((a) => [a.name, a]));
+  const packAsset = assets.get('pack.json');
+  if (!packAsset) throw new Error('на зеркале нет pack.json');
+  const res = await fetch(packAsset.url, {
+    signal: AbortSignal.timeout(20000),
+    headers: { 'User-Agent': dl.UA, Accept: 'application/octet-stream' },
+  });
+  if (!res.ok) throw new Error(`pack.json с зеркала: HTTP ${res.status}`);
+  const pack = validate(JSON.parse(await res.text()));
+  for (const f of pack.files) {
+    if (/^https:\/\//.test(f.url)) continue; // официальная ссылка (Modrinth) — качаем как есть
+    const a = assets.get(mirrorName(f));
+    if (!a) throw new Error(`на зеркале нет файла ${f.path}`);
+    f.url = a.url;
+    f.headers = { Accept: 'application/octet-stream' };
+  }
+  pack._baseUrl = null;
+  pack._mirror = true;
+  pack._offline = false;
+  return pack;
+}
+
+/**
+ * Получает pack.json: сайт -> зеркало на GitHub -> последний сохранённый.
+ * mirror: { github: 'owner/repo', tag: 'modpack' }
+ */
+async function loadPack(url, root, { signal, mirror } = {}) {
   const cache = path.join(root, 'pack.json');
+  const save = async (pack) => {
+    await fsp.mkdir(root, { recursive: true });
+    await fsp.writeFile(cache, JSON.stringify(pack, null, 2));
+    return pack;
+  };
   try {
     const pack = validate(await dl.fetchJson(url, { signal, noCache: true, timeoutMs: 8000 }));
     pack._baseUrl = url;
     pack._offline = false;
-    await fsp.mkdir(root, { recursive: true });
-    await fsp.writeFile(cache, JSON.stringify(pack, null, 2));
-    return pack;
+    return await save(pack);
   } catch (e) {
     if (e.code === 'ABORTED') throw e;
+    if (mirror && mirror.github) {
+      try {
+        const pack = await loadFromMirror(mirror, signal);
+        pack._siteError = e.message;
+        return await save(pack);
+      } catch (me) {
+        e.message = `${e.message}; зеркало: ${me.message}`;
+      }
+    }
     try {
       const pack = validate(JSON.parse(await fsp.readFile(cache, 'utf8')));
       pack._offline = true;
@@ -102,7 +157,7 @@ async function syncPack(pack, root, gameDir, { repair, signal, onProgress, onSta
     if (ok) {
       newState.files[f.path] = { sha1: f.sha1, size: st.size, mtimeMs: st.mtimeMs };
     } else {
-      tasks.push({ url: new URL(f.url, base || undefined).href, dest, sha1: f.sha1, size: f.size, path: f.path });
+      tasks.push({ url: new URL(f.url, base || undefined).href, headers: f.headers, dest, sha1: f.sha1, size: f.size, path: f.path });
     }
   }
 
@@ -148,4 +203,4 @@ async function installedVersion(root) {
   return (await readState(root)).version || null;
 }
 
-module.exports = { loadPack, syncPack, installedVersion };
+module.exports = { loadPack, syncPack, installedVersion, mirrorName };

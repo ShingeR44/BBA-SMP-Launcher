@@ -565,6 +565,9 @@ function idleProgress() {
   const p = state.pack;
   if (!p) setProgress('Нет связи с сайтом сборки');
   else if (p.offline) setProgress('Сайт сборки не отвечает — используется сохранённая сборка', null, p.version);
+  else if (p.mirror && !p.installed) setProgress(`Сборка ${p.version} будет загружена с зеркала GitHub`, null, fmtSize(p.totalSize));
+  else if (p.mirror && !p.upToDate) setProgress(`Обновление сборки ${p.version} — с зеркала GitHub`, null, `сейчас ${p.installed}`);
+  else if (p.mirror) setProgress('Готово к запуску · сборка с зеркала GitHub', 1, `сборка ${p.version}`);
   else if (!p.installed) setProgress(`Сборка ${p.version} ещё не установлена`, null, fmtSize(p.totalSize));
   else if (!p.upToDate) setProgress(`Доступно обновление сборки: ${p.version}`, null, `сейчас ${p.installed}`);
   else setProgress('Готово к запуску', 1, `сборка ${p.version}`);

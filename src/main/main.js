@@ -172,6 +172,7 @@ function packSummary(pack, installed) {
     installed,
     upToDate: installed === pack.version,
     offline: !!pack._offline,
+    mirror: !!pack._mirror,
     offlineError: pack._error || null,
     recommendedMemory: recommendedMemory(pack),
   };
@@ -214,7 +215,7 @@ async function play({ repair = false } = {}) {
 
     // 2. Сборка
     setStage('pack', 'Получаем информацию о сборке…');
-    const pack = await modpack.loadPack(config.packUrl, ROOT, { signal });
+    const pack = await modpack.loadPack(config.packUrl, ROOT, { signal, mirror: config.packMirror });
     lastPack = pack;
 
     // 3. Minecraft
@@ -391,7 +392,7 @@ function registerIpc() {
   });
 
   handle('pack:info', async () => {
-    const pack = await modpack.loadPack(config.packUrl, ROOT).catch(() => lastPack);
+    const pack = await modpack.loadPack(config.packUrl, ROOT, { mirror: config.packMirror }).catch(() => lastPack);
     if (pack) lastPack = pack;
     return packSummary(pack, await modpack.installedVersion(ROOT));
   });

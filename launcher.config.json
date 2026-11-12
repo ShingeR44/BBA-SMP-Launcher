@@ -40,5 +40,9 @@
       "name": "Для VPN и заграницы",
       "description": "Если играешь с включённым VPN или из-за границы"
     }
-  ]
+  ],
+  "packMirror": {
+    "github": "ShingeR44/BBA-SMP-Launcher",
+    "tag": "modpack"
+  }
 }
