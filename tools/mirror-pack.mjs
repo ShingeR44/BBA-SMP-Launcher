@@ -110,7 +110,15 @@ console.log(`С Modrinth (ссылкой): ${pack.files.length - hosted.length},
 // Кладём только моды с открытой лицензией, разрешающей распространение копий (MIT, Apache, GPL, CC и т. п.).
 // «All Rights Reserved» и моды без лицензии не загружаем — их нужно положить на Modrinth или убрать из зеркала.
 const { readZipEntries, readZipEntry } = require(path.join(ROOT, 'src/main/download.js'));
-const OPEN = /(MIT|Apache|BSD|ISC|MPL|LGPL|GPL|Unlicense|CC0|CC[- ]BY|Zlib|WTFPL|EUPL)/i;
+// PolyForm Shield / Perimeter / Small Business / Noncommercial разрешают распространять копии
+// (с приложенными условиями — ссылка на них попадает в описание релиза). PolyForm Internal Use — нет.
+const OPEN = /(MIT|Apache|BSD|ISC|MPL|LGPL|GPL|Unlicense|CC0|CC[- ]BY|Zlib|WTFPL|EUPL|PolyForm[- ](Shield|Perimeter|Small[- ]Business|Noncommercial))/i;
+const licenseUrl = (lic) => {
+  const m = /PolyForm[- ](Shield|Perimeter|Small[- ]Business|Noncommercial)[- ]?([\d.]+)?/i.exec(lic || '');
+  if (!m) return null;
+  const slug = m[1].toLowerCase().replace(/[- ]/g, '-');
+  return `https://polyformproject.org/licenses/${slug}/${m[2] || '1.0.0'}`;
+};
 const meta = (file) => {
   try {
     const buf = fs.readFileSync(file);
@@ -144,7 +152,7 @@ const notes = [
   'Моды с Modrinth здесь не хранятся — лаунчер скачивает их по официальным ссылкам cdn.modrinth.com.',
   'Файлы ниже нет на Modrinth; они распространяются без изменений и некоммерчески, по их лицензиям:',
   '',
-  ...credits.map((c) => `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; лицензия ${c.license}${c.source ? `; ${c.source}` : ''}`),
+  ...credits.map((c) => `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; лицензия ${c.license}${licenseUrl(c.license) ? ` (условия: ${licenseUrl(c.license)})` : ''}${c.source ? `; ${c.source}` : ''}`),
 ].join('\n');
 
 // ---------- релиз-зеркало ----------
