@@ -44,7 +44,14 @@
   "packMirror": {
     "github": "ShingeR44/BBA-SMP-Launcher",
     "tag": "modpack",
-    "plusTag": "modpack-plus"
+    "plusTag": "modpack-plus",
+    "allowFiles": [
+      "bba-neuro-boot",
+      "bba-screen-of-death",
+      "cinematic-fix",
+      "cinematic-jei-fix"
+    ],
+    "skipFiles": []
   },
   "packsIndex": "https://bba.dimon20k.ru/launcher/packs.json",
   "variants": {

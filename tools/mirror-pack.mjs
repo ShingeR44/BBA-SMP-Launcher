@@ -81,6 +81,16 @@ for (const f of pack.files) {
   if (/^https?:/.test(f.url)) f.url = f.path.split('/').map(encodeURIComponent).join('/');
 }
 
+// ---------- исключения ----------
+// packMirror.skipFiles — части имён файлов, которые в зеркало не кладём (например, моды, которые нельзя распространять).
+// Игроки, которые берут сборку с зеркала, получат её без этих модов.
+const matchAny = (list, p) => (list || []).some((x) => p.toLowerCase().includes(String(x).toLowerCase()));
+const skipped = pack.files.filter((f) => matchAny(mirror.skipFiles, f.path));
+if (skipped.length) {
+  pack.files = pack.files.filter((f) => !matchAny(mirror.skipFiles, f.path));
+  console.log(`Не кладём в зеркало (packMirror.skipFiles): ${skipped.map((f) => f.path).join(', ')}`);
+}
+
 // ---------- проверяем файлы ----------
 for (const f of pack.files) {
   const p = fileOf(f);
@@ -137,12 +147,13 @@ const refused = [];
 for (const f of hosted) {
   const m = meta(fileOf(f));
   const lic = m.license || '';
-  if (!OPEN.test(lic) || /all rights reserved|ARR|proprietary/i.test(lic)) refused.push(`${f.path} (лицензия: ${lic || 'не указана'})`);
-  else credits.push({ path: f.path, ...m });
+  const permitted = matchAny(mirror.allowFiles, f.path);
+  if (!permitted && (!OPEN.test(lic) || /all rights reserved|ARR|proprietary/i.test(lic))) refused.push(`${f.path} (лицензия: ${lic || 'не указана'})`);
+  else credits.push({ path: f.path, ...m, permitted });
   console.log(`  в релиз: ${f.path} — ${lic || 'лицензия не указана'}`);
 }
 if (refused.length && !args.includes('--allow-unlicensed')) {
-  console.error(`\nНе загружаю моды без открытой лицензии:\n  ${refused.join('\n  ')}\nВыложите их на Modrinth, уберите из зеркала или запустите с --allow-unlicensed, если у вас есть разрешение автора.`);
+  console.error(`\nНе загружаю моды без открытой лицензии:\n  ${refused.join('\n  ')}\nВыложите их на Modrinth; если есть разрешение автора — добавьте часть имени файла в packMirror.allowFiles, если распространять нельзя — в packMirror.skipFiles (launcher.config.json).`);
   process.exit(1);
 }
 const notes = [
@@ -152,7 +163,12 @@ const notes = [
   'Моды с Modrinth здесь не хранятся — лаунчер скачивает их по официальным ссылкам cdn.modrinth.com.',
   'Файлы ниже нет на Modrinth; они распространяются без изменений и некоммерчески, по их лицензиям:',
   '',
-  ...credits.map((c) => `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; лицензия ${c.license}${licenseUrl(c.license) ? ` (условия: ${licenseUrl(c.license)})` : ''}${c.source ? `; ${c.source}` : ''}`),
+  ...credits.map((c) =>
+    c.permitted && !OPEN.test(c.license || '')
+      ? `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; выложено с разрешения автора${c.license ? ` (лицензия: ${c.license})` : ''}`
+      : `- **${c.name || c.path}** — ${c.authors && c.authors.length ? c.authors.join(', ') : 'автор не указан'}; лицензия ${c.license}${licenseUrl(c.license) ? ` (условия: ${licenseUrl(c.license)})` : ''}${c.source ? `; ${c.source}` : ''}`
+  ),
+  ...(skipped.length ? ['', `Не входят в зеркало (нельзя распространять): ${skipped.map((f) => f.name || f.path).join(', ')}. Игроки, взявшие сборку отсюда, получат её без них.`] : []),
 ].join('\n');
 
 // ---------- релиз-зеркало ----------
