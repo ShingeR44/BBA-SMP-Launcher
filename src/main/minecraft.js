@@ -458,7 +458,12 @@ function buildLaunchArgs(root, version, o) {
     jvm.push(`-javaagent:${o.injector.jar}=${o.injector.apiRoot}`);
     if (o.injector.metadata) jvm.push(`-Dauthlibinjector.yggdrasil.prefetched=${Buffer.from(o.injector.metadata).toString('base64')}`);
   }
-  jvm.push(...(o.jvmArgs || []));
+  // Только IPv4: у некоторых адресов (например, туннеля playit) есть IPv6, и без поддержки IPv6
+  // у провайдера Windows отвечает «Cannot assign requested address: getsockopt».
+  // Кто прописал своё -Djava.net.prefer..., тому не мешаем.
+  const userArgs = o.jvmArgs || [];
+  if (!userArgs.some((a) => /^-Djava\.net\.prefer(IPv4Stack|IPv6Addresses)=/.test(a))) jvm.push('-Djava.net.preferIPv4Stack=true');
+  jvm.push(...userArgs);
   if (version.arguments.jvm.length) jvm.push(...expand(version.arguments.jvm));
   else jvm.push(`-Djava.library.path=${nativesDir}`, '-cp', vars.classpath);
 
