@@ -107,14 +107,43 @@ const mr = await fetch('https://api.modrinth.com/v2/version_files', {
 });
 const onModrinth = mr.ok ? await mr.json() : {};
 if (!mr.ok) console.warn(`Modrinth не ответил (HTTP ${mr.status}) — все файлы пойдут в релиз.`);
+// packMirror.externalUrls: { "часть имени файла": "ссылка" } — официальный источник файла, которого нет на Modrinth.
+// Можно указать страницу файла CurseForge (…/mc-mods/<мод>/files/<номер>) — она превратится в прямую ссылку CDN.
+// Файл скачивается и сверяется по sha1: в зеркало попадает ссылка, только если это тот же файл, что в сборке.
+const cdnFromCurseForge = (url, fileName) => {
+  const m = /curseforge\.com\/minecraft\/[^/]+\/[^/]+\/(?:files|download)\/(\d{5,})/i.exec(url);
+  if (!m) return url;
+  const id = m[1];
+  return `https://mediafilez.forgecdn.net/files/${id.slice(0, 4)}/${Number(id.slice(4))}/${encodeURIComponent(fileName)}`;
+};
+const externalFor = (p) => {
+  const entry = Object.entries(mirror.externalUrls || {}).find(([k]) => p.toLowerCase().includes(k.toLowerCase()));
+  return entry ? entry[1] : null;
+};
 const hosted = [];
 for (const f of pack.files) {
   const v = onModrinth[f.sha1];
   const file = v && v.files.find((x) => x.hashes.sha1 === f.sha1);
-  if (file) f.url = file.url;
-  else hosted.push(f);
+  if (file) {
+    f.url = file.url;
+    continue;
+  }
+  const ext = externalFor(f.path);
+  if (ext) {
+    const url = cdnFromCurseForge(ext, path.posix.basename(f.path));
+    const r = await fetch(url, { redirect: 'follow' });
+    const buf = r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+    const got = buf && crypto.createHash('sha1').update(buf).digest('hex');
+    if (got === f.sha1) {
+      f.url = url;
+      console.log(`  ссылкой на официальный источник: ${f.path} -> ${url}`);
+      continue;
+    }
+    console.warn(`  ${f.path}: по ссылке ${url} ${r.ok ? 'лежит другой файл (sha1 не совпал)' : `ошибка HTTP ${r.status}`} — ссылку не используем`);
+  }
+  hosted.push(f);
 }
-console.log(`С Modrinth (ссылкой): ${pack.files.length - hosted.length}, в релиз GitHub: ${hosted.length}`);
+console.log(`Ссылками на Modrinth и другие официальные источники: ${pack.files.length - hosted.length}, в релиз GitHub: ${hosted.length}`);
 
 // ---------- лицензии файлов, которые кладём в релиз ----------
 // Кладём только моды с открытой лицензией, разрешающей распространение копий (MIT, Apache, GPL, CC и т. п.).
@@ -153,14 +182,14 @@ for (const f of hosted) {
   console.log(`  в релиз: ${f.path} — ${lic || 'лицензия не указана'}`);
 }
 if (refused.length && !args.includes('--allow-unlicensed')) {
-  console.error(`\nНе загружаю моды без открытой лицензии:\n  ${refused.join('\n  ')}\nВыложите их на Modrinth; если есть разрешение автора — добавьте часть имени файла в packMirror.allowFiles, если распространять нельзя — в packMirror.skipFiles (launcher.config.json).`);
+  console.error(`\nНе загружаю моды без открытой лицензии:\n  ${refused.join('\n  ')}\nЕсли мод есть на CurseForge — добавьте ссылку на его файл в packMirror.externalUrls; если есть разрешение автора — часть имени файла в packMirror.allowFiles; если распространять нельзя — в packMirror.skipFiles (launcher.config.json).`);
   process.exit(1);
 }
 const notes = [
   PLUS ? 'Служебный релиз: копия клиентской сборки (BBA Plus) для лаунчера.' : 'Служебный релиз: копия сборки модов для лаунчера.',
   'Лаунчер берёт её отсюда, если сайт не отвечает. Скачивать вручную не нужно.',
   '',
-  'Моды с Modrinth здесь не хранятся — лаунчер скачивает их по официальным ссылкам cdn.modrinth.com.',
+  'Моды с Modrinth и CurseForge здесь не хранятся — лаунчер скачивает их по официальным ссылкам (cdn.modrinth.com, forgecdn.net).',
   'Файлы ниже нет на Modrinth; они распространяются без изменений и некоммерчески, по их лицензиям:',
   '',
   ...credits.map((c) =>
