@@ -51,7 +51,10 @@
       "cinematic-fix",
       "cinematic-jei-fix"
     ],
-    "skipFiles": []
+    "skipFiles": [],
+    "externalUrls": {
+      "vanilla_timber": "https://www.curseforge.com/minecraft/mc-mods/profets-timber/download/9588100"
+    }
   },
   "packsIndex": "https://bba.dimon20k.ru/launcher/packs.json",
   "variants": {
