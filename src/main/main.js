@@ -9,7 +9,7 @@ const modpack = require('./modpack');
 const status = require('./status');
 const ygg = require('./yggdrasil');
 const news = require('./news');
-const { Content } = require('./content');
+const { Content, readModMeta } = require('./content');
 const { Updater } = require('./updater');
 
 // ---------- Конфиг лаунчера ----------
@@ -42,8 +42,16 @@ function cachedPack() {
   };
   const main = read('pack.json');
   const extra = read('pack-plus.json');
-  if (main && extra && currentVariant() === 'plus') return modpack.combinePacks(main, extra);
+  if (main && extra && currentVariant() === 'plus') return applyDisabled(modpack.combinePacks(main, extra));
   return main;
+}
+
+/** Из Plus убираем моды, которые игрок выключил (только дополнительные — Standard не трогаем). */
+function applyDisabled(pack) {
+  if (!pack || !content) return pack;
+  const off = content.packDisabled();
+  if (!Object.keys(off).length) return pack;
+  return { ...pack, files: pack.files.filter((f) => !(f.from === 'extra' && off[f.path.toLowerCase()])) };
 }
 
 // ---------- Две сборки: Standard (основная) и Plus (основная + клиентская) ----------
@@ -59,7 +67,57 @@ const packsIndexUrl = () => config.packsIndex || new URL('packs.json', config.pa
 
 function effectivePack() {
   if (!lastMain) return null;
-  return currentVariant() === 'plus' && lastExtra ? modpack.combinePacks(lastMain, lastExtra) : lastMain;
+  return currentVariant() === 'plus' && lastExtra ? applyDisabled(modpack.combinePacks(lastMain, lastExtra)) : lastMain;
+}
+
+// ---------- Выключение модов BBA Plus ----------
+const BASE_DEPS = new Set(['minecraft', 'fabricloader', 'fabric', 'java', 'fabric-api', 'quilt_loader', 'quilted_fabric_api']);
+
+async function togglePlusMod(file, enabled) {
+  if (currentVariant() !== 'plus' || !lastMain || !lastExtra) throw new Error('Выключать моды можно только в BBA Plus');
+  const full = modpack.combinePacks(lastMain, lastExtra);
+  const rel = `mods/${file}`.toLowerCase();
+  const target = full.files.find((x) => x.path.toLowerCase() === rel);
+  if (!target) throw new Error('Такого мода нет в сборке');
+  if (target.from !== 'extra') throw new Error('Моды BBA Standard выключить нельзя — без них не зайти на сервер');
+  const metaOf = (p) => readModMeta(path.join(GAME_DIR, ...p.split('/')));
+  const off = content.packDisabled();
+
+  if (!enabled) {
+    const m = metaOf(target.path) || {};
+    if (m.id) {
+      // нельзя выключить то, без чего не запустится другой включённый мод
+      const needs = full.files
+        .filter((x) => x !== target && x.path.startsWith('mods/') && !(x.from === 'extra' && off[x.path.toLowerCase()]))
+        .map((x) => ({ x, mm: metaOf(x.path) }))
+        .filter(({ mm }) => mm && (mm.depends || []).includes(m.id));
+      if (needs.length) throw new Error(`Этот мод нужен для: ${needs.map(({ x, mm }) => x.name || mm.name).join(', ')}. Сначала выключите их.`);
+    }
+    content.setPackDisabled(target.path, {
+      path: target.path,
+      id: m.id || null,
+      name: target.name || m.name || file,
+      depends: (m.depends || []).filter((d) => !BASE_DEPS.has(d)),
+    });
+    await fs.promises.rm(path.join(GAME_DIR, ...target.path.split('/')), { force: true });
+    return { also: [] };
+  }
+
+  // включаем, а заодно — выключенные моды, без которых этот не работает
+  const also = [];
+  const queue = [rel];
+  const seen = new Set();
+  while (queue.length) {
+    const key = queue.shift();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rec = off[key];
+    if (!rec) continue;
+    content.clearPackDisabled(key);
+    if (key !== rel) also.push(rec.name);
+    for (const dep of rec.depends || []) for (const [k, r] of Object.entries(off)) if (r.id === dep) queue.push(k);
+  }
+  return { also };
 }
 
 /** Все пути, которые числятся в какой-либо сборке или ставились последней синхронизацией. */
@@ -230,9 +288,17 @@ function recommendedMemory(pack) {
 
 function packSummary(pack, installed) {
   if (!pack) return null;
-  const mods = pack.files
+  const off = content ? content.packDisabled() : {};
+  const listed = currentVariant() === 'plus' && lastMain && lastExtra ? modpack.combinePacks(lastMain, lastExtra) : pack;
+  const mods = listed.files
     .filter((f) => f.path.startsWith('mods/') && f.path.endsWith('.jar'))
-    .map((f) => ({ file: f.path.slice(5), size: f.size || 0, name: f.name || null, extra: f.from === 'extra' }));
+    .map((f) => ({
+      file: f.path.slice(5),
+      size: f.size || 0,
+      name: f.name || null,
+      extra: f.from === 'extra',
+      disabled: f.from === 'extra' && !!off[f.path.toLowerCase()],
+    }));
   return {
     name: pack.name || config.serverName,
     version: pack.version || '—',
@@ -470,6 +536,11 @@ function registerIpc() {
   handle('pack:info', async () => {
     const pack = await loadAllPacks().catch(() => lastPack);
     return packSummary(pack, await modpack.installedVersion(ROOT));
+  });
+  handle('pack:toggleMod', async (file, enabled) => {
+    const r = await togglePlusMod(String(file), !!enabled);
+    lastPack = effectivePack();
+    return { summary: packSummary(lastPack, await modpack.installedVersion(ROOT)), also: r.also };
   });
   handle('pack:setVariant', async (id) => {
     if (!VARIANTS[id]) throw new Error('Нет такой сборки');

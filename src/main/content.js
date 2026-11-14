@@ -58,10 +58,11 @@ function readModMeta(file) {
     const clean = (s) => s.replace(/[\u0000-\u001f]+/g, ' ');
     if (quilt) {
       const j = JSON.parse(clean(quilt)).quilt_loader || {};
-      meta = { id: j.id, name: (j.metadata && j.metadata.name) || j.id, version: j.version, loader: 'quilt' };
+      const deps = (j.depends || []).map((d) => (typeof d === 'string' ? d : d && d.id)).filter(Boolean);
+      meta = { id: j.id, name: (j.metadata && j.metadata.name) || j.id, version: j.version, loader: 'quilt', depends: deps };
     } else if (fabric) {
       const j = JSON.parse(clean(fabric));
-      meta = { id: j.id, name: j.name || j.id, version: j.version, loader: 'fabric' };
+      meta = { id: j.id, name: j.name || j.id, version: j.version, loader: 'fabric', depends: Object.keys(j.depends || {}) };
     } else if (neo || forge) {
       const t = neo || forge;
       const id = (/modId\s*=\s*"([^"]+)"/.exec(t) || [])[1];
@@ -123,6 +124,22 @@ class Content {
     } catch {
       /* не критично */
     }
+  }
+
+  /** Моды BBA Plus, которые игрок выключил: { 'mods/x.jar': { path, id, name, depends } } (ключ в нижнем регистре) */
+  packDisabled() {
+    return { ...(this.registry.packDisabled || {}) };
+  }
+
+  setPackDisabled(rel, rec) {
+    this.registry.packDisabled = this.registry.packDisabled || {};
+    this.registry.packDisabled[rel.toLowerCase()] = rec;
+    this.#saveRegistry();
+  }
+
+  clearPackDisabled(rel) {
+    if (this.registry.packDisabled) delete this.registry.packDisabled[rel.toLowerCase()];
+    this.#saveRegistry();
   }
 
   /** Файл игрока? rel — путь от папки игры, например «mods/sodium.jar» */

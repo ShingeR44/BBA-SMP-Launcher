@@ -257,17 +257,27 @@ function renderContent() {
     if (!p) return list.replaceChildren(el('div', { class: 'empty' }, 'Не удалось получить сборку. Проверьте интернет.'));
     const mods = [...p.mods].sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file));
     note.hidden = false;
-    note.textContent = `${p.variantName}: моды ставятся и обновляются сами, убрать их нельзя — если удалить или подменить файл вручную, лаунчер вернёт его при запуске.${p.variant === 'plus' ? ' Моды с меткой Plus — дополнительные: графика, анимации, звуки.' : ''} Сборку можно сменить рядом с кнопкой «Играть».`;
+    note.textContent = p.variant === 'plus'
+      ? `${p.variantName}: моды с замком нужны для игры на сервере — их выключить нельзя. Моды с меткой Plus дополнительные (графика, анимации, звуки): ненужные можно выключить переключателем, включённый обратно скачается при запуске игры.`
+      : `${p.variantName}: все моды нужны для игры на сервере — выключить или удалить их нельзя. Если удалить или подменить файл вручную, лаунчер вернёт его при запуске. Сборку можно сменить рядом с кнопкой «Играть».`;
     return list.replaceChildren(
       ...(mods.length
-        ? mods.map((m) =>
-            el(
+        ? mods.map((m) => {
+            // моды Plus можно выключать, моды Standard — нет
+            let control;
+            if (m.extra && p.variant === 'plus') {
+              control = el('label', { class: 'switch small', title: m.disabled ? 'Включить' : 'Выключить' }, el('input', { type: 'checkbox' }), el('span'));
+              const box = control.querySelector('input');
+              box.checked = !m.disabled;
+              box.addEventListener('change', () => togglePackMod(m, box.checked, box));
+            } else control = el('span', { class: 'lock', title: 'Мод сборки — выключить нельзя' }, '🔒');
+            return el(
               'div',
-              { class: 'mod', title: m.file },
-              el('span', { class: 'name' }, el('span', { class: 'lock', title: 'Мод сборки' }, '🔒'), m.name || prettyMod(m.file), m.extra ? el('span', { class: 'plus-tag', title: 'Только в BBA Plus' }, 'Plus') : null),
-              el('span', { class: 'size' }, m.size ? fmtSize(m.size) : '')
-            )
-          )
+              { class: `mod${m.disabled ? ' off' : ''}`, title: m.file },
+              el('span', { class: 'name' }, control, m.name || prettyMod(m.file), m.extra ? el('span', { class: 'plus-tag', title: 'Только в BBA Plus' }, 'Plus') : null),
+              el('span', { class: 'size' }, m.disabled ? 'выключен' : m.size ? fmtSize(m.size) : '')
+            );
+          })
         : [el('div', { class: 'empty' }, 'В сборке пока нет модов.')])
     );
   }
@@ -322,6 +332,24 @@ function renderContent() {
     );
   }
   list.replaceChildren(...items);
+}
+
+async function togglePackMod(m, enabled, box) {
+  box.disabled = true;
+  try {
+    const r = await bba.pack.toggleMod(m.file, enabled);
+    state.pack = r.summary;
+    const name = m.name || prettyMod(m.file);
+    if (!enabled) toast(`${name} выключен`, { ok: true, timeout: 3000 });
+    else toast(`${name} включён — скачается при запуске игры${r.also.length ? `. Заодно включены нужные ему: ${r.also.join(', ')}` : ''}`, { ok: true, timeout: 5000 });
+  } catch (e) {
+    box.checked = !enabled;
+    showError(e);
+  }
+  box.disabled = false;
+  renderPack();
+  renderHome();
+  refreshContent(['mods']);
 }
 
 async function addContent(kind, paths) {
