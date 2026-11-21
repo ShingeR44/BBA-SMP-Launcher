@@ -303,8 +303,8 @@ function renderContent() {
   for (const it of c.pack) {
     items.push(
       el('div', { class: 'user-item' },
-        el('span', { class: 'lock', title: 'Файл сборки' }, '🔒'),
-        el('div', { class: 'meta' }, el('b', {}, it.name), el('span', {}, 'из сборки — убрать нельзя')),
+        el('span', { class: 'lock', title: kind === 'resourcepacks' ? 'Ресурспак сборки — всегда включён' : 'Файл сборки' }, '🔒'),
+        el('div', { class: 'meta' }, el('b', {}, it.name), el('span', {}, kind === 'resourcepacks' ? 'из сборки — всегда включён в игре' : 'из сборки — убрать нельзя')),
         el('span', { class: 'size' }, it.size ? fmtSize(it.size) : '')
       )
     );

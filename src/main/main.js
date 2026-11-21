@@ -11,6 +11,7 @@ const ygg = require('./yggdrasil');
 const news = require('./news');
 const { Content, readModMeta } = require('./content');
 const { Updater } = require('./updater');
+const gameopts = require('./gameopts');
 
 // ---------- Конфиг лаунчера ----------
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'launcher.config.json'), 'utf8'));
@@ -404,6 +405,19 @@ async function play({ repair = false } = {}) {
     });
     // свои моды игрока, которые дублируют моды сборки или сделаны под другой загрузчик, выключаем
     const { disabled, enabled: reenabled } = await content.enforce();
+    // ресурспаки сборки обязательны: включаем их в options.txt, а ресурспаки серверов BBA принимаем без вопроса
+    try {
+      const r = await gameopts.enforceResourcePacks(GAME_DIR, gameopts.packResourcePacks(pack, GAME_DIR));
+      if (r.error) console.error('[resourcepacks]', r.error);
+    } catch (e) {
+      console.error('[resourcepacks]', e);
+    }
+    try {
+      const r = await gameopts.acceptServerPacks(GAME_DIR, serverList(pack), config.serverName);
+      if (r.error) console.error('[servers.dat]', r.error);
+    } catch (e) {
+      console.error('[servers.dat]', e);
+    }
 
     // 8. Запуск
     setStage('launch', 'Запускаем игру…');

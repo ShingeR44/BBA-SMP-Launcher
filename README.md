@@ -172,6 +172,10 @@ RequireInvite = true   # регистрация только по приглаш
 
 Для шейдеров в сборке должен быть Iris (Fabric) или Oculus (NeoForge), иначе лаунчер покажет подсказку.
 
+**Ресурспаки сборки обязательны.** Перед каждым запуском лаунчер включает их в `options.txt` (`resourcePacks`): если игрок выключил пак в игре, при следующем запуске он снова включится. Уже включённый пак остаётся на своём месте в списке, недостающий добавляется наверх. Пак записывается и в `incompatibleResourcePacks`, чтобы игра не выключила его из-за другой версии в `pack.mcmeta`. Подходят `.zip` в `resourcepacks/` и папки `resourcepacks/<папка>/pack.mcmeta`. Ресурспаки игрока лаунчер не трогает.
+
+**Ресурспаки сервера принимаются без вопроса.** Для всех адресов сервера (`servers`) лаунчер ставит в `servers.dat` «Ресурспаки сервера: Включены» (`acceptTextures`). Если адреса в списке серверов игрока нет, он добавляется скрытым, как это делает сама игра при автоподключении.
+
 Чтобы запретить свои файлы, добавьте в `pack.json` `"userContent": { "mods": false }` или запустите `build-pack` с флагами `--no-user-mods`, `--no-user-shaders`, `--no-user-resourcepacks`. Тогда в этой папке остаются только файлы сборки.
 
 > На Fabric-сервере сервер не проверяет список клиентских модов. Свои моды игроков — на совести игроков и правил сервера.
@@ -237,6 +241,10 @@ npm run mirror-pack -- --from-launcher    # взять то, что уже ск�
 2. Соберите:
    ```bash
    npm run dist
+   ```
+   Без Node.js и npm — через Electron из `node_modules`:
+   ```bash
+   ELECTRON_RUN_AS_NODE=1 ELECTRON_NO_ASAR=1 node_modules/electron/dist/electron.exe tools/dist.js
    ```
    В `dist/` появятся `BBA-SMP-Launcher-Setup-<версия>.exe`, `.blockmap`, `latest.yml` и `BBA-SMP-Launcher-Portable-<версия>.exe`.
 3. Создайте релиз на GitHub с тегом `v<версия>` и загрузите **все четыре файла**. Через GitHub CLI:
