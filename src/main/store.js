@@ -12,12 +12,10 @@ const DEFAULT_SETTINGS = {
   height: 720,
   fullscreen: false,
   afterLaunch: 'hide', // hide | keep | close
-  autoConnect: true,
   theme: 'dark',
   jvmArgs: '',
   selectedAccount: null,
   lastNewsSeen: null,
-  serverAddress: null, // выбранный адрес сервера (host:port)
   windowBounds: null, // размер и положение окна
   windowMaximized: false,
   packVariant: 'standard', // standard | plus

@@ -59,7 +59,6 @@ contextBridge.exposeInMainWorld('bba', {
   server: {
     status: () => call('server:status'),
     list: () => call('server:list'),
-    select: (id) => call('server:select', id),
     pingAll: () => call('server:pingAll'),
   },
   game: {

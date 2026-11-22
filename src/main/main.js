@@ -278,7 +278,7 @@ function serverList(pack) {
 }
 function selectedServer(pack) {
   const list = serverList(pack);
-  return list.find((x) => x.id === store.settings.serverAddress) || list[0] || null;
+  return list[0] || null; // статус в шапке — по основному адресу
 }
 
 function recommendedMemory(pack) {
@@ -405,7 +405,7 @@ async function play({ repair = false } = {}) {
     });
     // свои моды игрока, которые дублируют моды сборки или сделаны под другой загрузчик, выключаем
     const { disabled, enabled: reenabled } = await content.enforce();
-    // ресурспаки сборки обязательны: включаем их в options.txt, а ресурспаки серверов BBA принимаем без вопроса
+    // ресурспаки сборки обязательны: включаем их в options.txt; адреса BBA — в список серверов игры
     try {
       const r = await gameopts.enforceResourcePacks(GAME_DIR, gameopts.packResourcePacks(pack, GAME_DIR));
       if (r.error) console.error('[resourcepacks]', r.error);
@@ -413,7 +413,7 @@ async function play({ repair = false } = {}) {
       console.error('[resourcepacks]', e);
     }
     try {
-      const r = await gameopts.acceptServerPacks(GAME_DIR, serverList(pack), config.serverName);
+      const r = await gameopts.syncServerList(GAME_DIR, serverList(pack), { serverName: config.serverName, stateFile: path.join(ROOT, 'servers-added.json') });
       if (r.error) console.error('[servers.dat]', r.error);
     } catch (e) {
       console.error('[servers.dat]', e);
@@ -430,7 +430,6 @@ async function play({ repair = false } = {}) {
       width: s.width,
       height: s.height,
       fullscreen: s.fullscreen,
-      server: s.autoConnect ? selectedServer(pack) : null,
       clientId: account.type === 'ygg' ? '' : AUTH.msClientId,
       injector,
       launcherVersion: app.getVersion(),
@@ -607,11 +606,6 @@ function registerIpc() {
   handle('server:list', () => {
     const sel = selectedServer(lastPack);
     return serverList(lastPack).map((x) => ({ ...x, selected: !!sel && x.id === sel.id }));
-  });
-  handle('server:select', (id) => {
-    if (!serverList(lastPack).some((x) => x.id === id)) throw new Error('Такого адреса нет в списке');
-    store.setSettings({ serverAddress: id });
-    return serverList(lastPack).map((x) => ({ ...x, selected: x.id === id }));
   });
   // пинг всех адресов сразу — чтобы игрок видел, какой у него работает
   handle('server:pingAll', async () =>

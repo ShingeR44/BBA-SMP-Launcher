@@ -1,7 +1,7 @@
 'use strict';
 // Настройки игры, которые лаунчер выставляет перед каждым запуском:
 // - ресурспаки сборки всегда включены (options.txt → resourcePacks);
-// - ресурспаки с серверов BBA принимаются без вопроса (servers.dat → acceptTextures).
+// - адреса BBA есть в списке серверов игры, их ресурспаки принимаются без вопроса (servers.dat).
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -223,14 +223,26 @@ const setField = (c, key, val) => {
   else c.v.push([key, val]);
 };
 
-/** Адрес так, как его передаёт quickPlay (и как игра ищет сервер в servers.dat) */
+
+/** Адрес так, как его вводят в игре (и как игра ищет сервер в servers.dat): порт 25565 не пишется */
 const serverIp = (s) => (s.port && Number(s.port) !== 25565 ? `${s.host}:${s.port}` : s.host);
+const ipOf = (c) => {
+  const f = field(c, 'ip');
+  return f && f.t === T.STRING ? f.v.trim().toLowerCase() : null;
+};
+const isHidden = (c) => {
+  const h = field(c, 'hidden');
+  return !!(h && h.t === T.BYTE && h.v);
+};
 
 /**
- * Для всех адресов BBA ставит «Ресурспаки сервера: Включены», чтобы игра не спрашивала.
- * Адресов, которых нет в списке игрока, добавляет скрытыми — так же делает сама игра при quickPlay.
+ * Список серверов игры:
+ * - все адреса BBA появляются в «Сетевой игре» сверху, в порядке из pack.json. Каждый адрес лаунчер добавляет
+ *   один раз (помнит в stateFile): если игрок сам удалил сервер из списка, он не вернётся;
+ * - записи, которые раньше скрыто создавало автоподключение (quickPlay), становятся видимыми;
+ * - у всех адресов BBA «Ресурспаки сервера: Включены», чтобы игра не спрашивала.
  */
-async function acceptServerPacks(gameDir, servers, serverName = 'BBA SMP') {
+async function syncServerList(gameDir, servers, { serverName = 'BBA SMP', stateFile } = {}) {
   const file = path.join(gameDir, 'servers.dat');
   let nbt;
   try {
@@ -247,39 +259,65 @@ async function acceptServerPacks(gameDir, servers, serverName = 'BBA SMP') {
   if (list.v.length && list.et !== T.COMPOUND) return { changed: 0, error: 'servers.dat: неожиданный формат списка' };
   list.et = T.COMPOUND;
 
+  let added = [];
+  try {
+    added = JSON.parse(fs.readFileSync(stateFile, 'utf8')).added || [];
+  } catch {
+    /* ещё ничего не добавляли */
+  }
+  const addedSet = new Set(added.map((x) => String(x).toLowerCase()));
+
   let changed = 0;
-  for (const s of servers) {
+  const top = []; // записи BBA, которые ставим в начало списка
+  servers.forEach((s, i) => {
     const ip = serverIp(s).toLowerCase();
-    const found = list.v.filter((c) => {
-      const f = field(c, 'ip');
-      return f && f.t === T.STRING && f.v.trim().toLowerCase() === ip;
-    });
-    if (!found.length) {
-      list.v.push({
-        t: T.COMPOUND,
-        v: [
-          ['hidden', { t: T.BYTE, v: 1 }],
-          ['ip', { t: T.STRING, v: serverIp(s) }],
-          ['name', { t: T.STRING, v: s.name ? `${serverName} — ${s.name}` : serverName }],
-          ['acceptTextures', { t: T.BYTE, v: 1 }],
-        ],
-      });
-      changed++;
-      continue;
-    }
+    const name = i === 0 || !s.name ? serverName : `${serverName} — ${s.name}`;
+    const found = list.v.filter((c) => ipOf(c) === ip);
     for (const c of found) {
       const a = field(c, 'acceptTextures');
-      if (a && a.t === T.BYTE && a.v === 1) continue;
-      setField(c, 'acceptTextures', { t: T.BYTE, v: 1 });
-      changed++;
+      if (!(a && a.t === T.BYTE && a.v === 1)) {
+        setField(c, 'acceptTextures', { t: T.BYTE, v: 1 });
+        changed++;
+      }
     }
-  }
+    if (addedSet.has(ip)) return; // уже добавляли — дальше список игрока
+    addedSet.add(ip);
+    changed++;
+    const visible = found.find((c) => !isHidden(c));
+    if (visible) return; // игрок уже добавил этот адрес сам — оставляем его название и место
+    if (found.length) {
+      // скрытая запись от автоподключения: показываем её под нашим названием
+      const c = found[0];
+      setField(c, 'hidden', { t: T.BYTE, v: 0 });
+      setField(c, 'name', { t: T.STRING, v: name });
+      list.v.splice(list.v.indexOf(c), 1);
+      top.push(c);
+      return;
+    }
+    top.push({
+      t: T.COMPOUND,
+      v: [
+        ['ip', { t: T.STRING, v: serverIp(s) }],
+        ['name', { t: T.STRING, v: name }],
+        ['acceptTextures', { t: T.BYTE, v: 1 }],
+      ],
+    });
+  });
   if (!changed) return { changed };
+  list.v.unshift(...top);
+
   await fsp.mkdir(gameDir, { recursive: true });
   const tmp = `${file}.bba-tmp`;
   await fsp.writeFile(tmp, writeNbt(nbt));
   await fsp.rename(tmp, file);
-  return { changed };
+  if (stateFile) {
+    try {
+      fs.writeFileSync(stateFile, JSON.stringify({ added: [...addedSet] }, null, 2));
+    } catch {
+      /* не критично: в худшем случае адрес добавится ещё раз */
+    }
+  }
+  return { changed, added: top.length };
 }
 
-module.exports = { packResourcePacks, enforceResourcePacks, acceptServerPacks, readNbt, writeNbt };
+module.exports = { packResourcePacks, enforceResourcePacks, syncServerList, readNbt, writeNbt };

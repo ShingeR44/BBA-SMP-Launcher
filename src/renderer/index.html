@@ -41,15 +41,15 @@
           <div class="hero">
             <div class="wrap">
               <h1 id="heroTitle">BBA SMP</h1>
-              <p>Выживание с модами для своей компании: вход по белому списку, свои ранги и живая карта мира. Лаунчер сам скачает сборку и подключит к серверу.</p>
+              <p>Выживание с модами для своей компании: вход по белому списку, свои ранги и живая карта мира. Лаунчер сам скачает сборку и добавит сервер в список серверов игры.</p>
             </div>
           </div>
           <div class="wrap">
             <div class="stats" id="homeStats"></div>
             <div class="cols">
               <div>
-                <h2>Адрес для входа</h2>
-                <div class="servers" id="serverList" role="radiogroup" aria-label="Адрес сервера"></div>
+                <h2>Адреса сервера</h2>
+                <div class="servers" id="serverList" role="list" aria-label="Адреса сервера"></div>
                 <p class="muted small" id="serverMotd"></p>
               </div>
               <div>
@@ -57,7 +57,7 @@
                 <ol class="steps">
                   <li>Зарегистрируйтесь на сайте сервера и войдите в лаунчере — кнопка внизу слева.</li>
                   <li>Попросите админа добавить ваш ник в белый список.</li>
-                  <li>Нажмите «Играть» — лаунчер установит игру, моды и сразу зайдёт на сервер.</li>
+                  <li>Нажмите «Играть» — лаунчер установит игру и моды. В игре откройте «Сетевая игра»: адреса BBA SMP уже в списке.</li>
                 </ol>
               </div>
             </div>
@@ -143,10 +143,6 @@
                   <input type="number" id="height" min="480" max="4320" class="num" />
                   <label class="check"><input type="checkbox" id="fullscreen" /><span></span>Полный экран</label>
                 </div>
-              </div>
-              <div class="row">
-                <div class="row-label"><b>Сразу заходить на сервер</b><span class="muted">После загрузки игра подключится к BBA SMP сама.</span></div>
-                <div class="row-control"><label class="switch"><input type="checkbox" id="autoConnect" /><span></span></label></div>
               </div>
               <div class="row">
                 <div class="row-label"><b>После запуска игры</b></div>

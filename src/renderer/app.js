@@ -683,15 +683,11 @@ function renderServers() {
       });
       const row = el(
         'div',
-        { class: `server-row${x.selected ? ' selected' : ''}`, role: 'radio', 'aria-checked': String(!!x.selected), tabindex: '0', title: 'Подключаться к этому адресу' },
-        el('span', { class: 'radio' }),
+        { class: 'server-row', role: 'listitem' },
         el('div', { class: 'meta' }, el('code', {}, addrText(x)), el('span', {}, [x.name, x.description].filter(Boolean).join(' — '))),
         ping,
         copy
       );
-      const choose = () => selectServer(x.id);
-      row.addEventListener('click', choose);
-      row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), choose()));
       return row;
     })
   );
@@ -713,20 +709,6 @@ async function pingServers() {
     /* нет сети */
   }
   renderServers();
-}
-
-async function selectServer(id) {
-  const cur = state.servers.find((x) => x.selected);
-  if (cur && cur.id === id) return;
-  try {
-    state.servers = await bba.server.select(id);
-    const x = state.servers.find((s) => s.id === id);
-    toast(`Лаунчер будет подключаться к ${addrText(x)}`, { ok: true, timeout: 3000 });
-  } catch (e) {
-    showError(e);
-  }
-  renderServers();
-  refreshStatus();
 }
 
 // ---------- Новости ----------
@@ -821,7 +803,6 @@ function renderSettings() {
   $('#width').value = s.width;
   $('#height').value = s.height;
   $('#fullscreen').checked = !!s.fullscreen;
-  $('#autoConnect').checked = !!s.autoConnect;
   $('#afterLaunch').value = s.afterLaunch;
   $('#jvmArgs').value = s.jvmArgs || '';
   $('#rootPath').textContent = info.root;
@@ -976,7 +957,6 @@ function bind() {
   $('#width').addEventListener('change', (e) => saveSetting({ width: Math.max(640, +e.target.value || 1280) }));
   $('#height').addEventListener('change', (e) => saveSetting({ height: Math.max(480, +e.target.value || 720) }));
   $('#fullscreen').addEventListener('change', (e) => saveSetting({ fullscreen: e.target.checked }));
-  $('#autoConnect').addEventListener('change', (e) => saveSetting({ autoConnect: e.target.checked }));
   $('#afterLaunch').addEventListener('change', (e) => saveSetting({ afterLaunch: e.target.value }));
   $('#jvmArgs').addEventListener('change', (e) => saveSetting({ jvmArgs: e.target.value.trim() }));
 
